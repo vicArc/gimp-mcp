@@ -732,6 +732,122 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def apply_color_profile(
+    ctx: Context,
+    profile_path: str,
+    intent: str = "perceptual",
+    bpc: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Convert an image through a new ICC profile (alias for convert_to_profile).
+
+    Parameters:
+    - profile_path: Path to .icc / .icm file
+    - intent: "perceptual" (default), "relative", "saturation", "absolute"
+    - bpc: Black-point compensation (default True)
+    - image_index: Target image index (default 0)
+
+    Returns: {profile_path, intent}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_color_profile", {
+            "profile_path": profile_path,
+            "intent":       intent,
+            "bpc":          bpc,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_color_profile failed: {e}")
+
+
+@mcp.tool()
+def convert_to_profile(
+    ctx: Context,
+    profile_path: str,
+    intent: str = "perceptual",
+    bpc: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Convert pixels to a new ICC profile via Image.convert_color_profile.
+
+    Parameters:
+    - profile_path: Path to .icc / .icm file
+    - intent: "perceptual" (default), "relative", "saturation", "absolute"
+    - bpc: Black-point compensation (default True)
+    - image_index: Target image index (default 0)
+
+    Returns: {profile_path, intent}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("convert_to_profile", {
+            "profile_path": profile_path,
+            "intent":       intent,
+            "bpc":          bpc,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"convert_to_profile failed: {e}")
+
+
+@mcp.tool()
+def assign_profile(
+    ctx: Context,
+    profile_path: str,
+    image_index: int = 0,
+) -> dict:
+    """Tag an image with an ICC profile without converting pixels.
+
+    Parameters:
+    - profile_path: Path to .icc / .icm file
+    - image_index: Target image index (default 0)
+
+    Returns: {profile_path}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("assign_profile", {
+            "profile_path": profile_path,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"assign_profile failed: {e}")
+
+
+@mcp.tool()
+def get_current_profile(ctx: Context, image_index: int = 0) -> dict:
+    """Return the ICC profile currently tagged on the image.
+
+    Parameters:
+    - image_index: Target image index (default 0)
+
+    Returns: {has_profile, description, size_bytes} or {has_profile: False}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_current_profile", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_current_profile failed: {e}")
+
+
+@mcp.tool()
 def load_palette(
     ctx: Context,
     file_path: str,

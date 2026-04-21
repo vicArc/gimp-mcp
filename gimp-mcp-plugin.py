@@ -372,6 +372,14 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._list_palettes(j.get("params", {}))
             elif "type" in j and j["type"] == "get_palette_color":
                 return self._get_palette_color(j.get("params", {}))
+            elif "type" in j and j["type"] == "apply_color_profile":
+                return self._apply_color_profile(j.get("params", {}))
+            elif "type" in j and j["type"] == "convert_to_profile":
+                return self._convert_to_profile(j.get("params", {}))
+            elif "type" in j and j["type"] == "assign_profile":
+                return self._assign_profile(j.get("params", {}))
+            elif "type" in j and j["type"] == "get_current_profile":
+                return self._get_current_profile(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2105,6 +2113,116 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _load_icc_bytes(self, file_path):
+        """Read ICC profile bytes from disk. Raises FileNotFoundError if missing."""
+        if not file_path or not os.path.exists(file_path):
+            raise FileNotFoundError(f"ICC profile file not found: {file_path}")
+        with open(file_path, "rb") as f:
+            return f.read()
+
+    def _apply_color_profile(self, params):
+        """Convert an image to a new ICC profile — same as convert_to_profile."""
+        return self._convert_to_profile(params)
+
+    def _convert_to_profile(self, params):
+        """Convert an image's pixel data through a new ICC profile.
+
+        Uses Image.convert_color_profile with the on-disk profile bytes
+        loaded into a GLib.Bytes buffer.
+        """
+        try:
+            from gi.repository import GLib
+            image_index   = int(params.get("image_index", 0))
+            profile_path  = params.get("profile_path") or ""
+            intent_str    = (params.get("intent") or "perceptual").lower()
+            INTENT_MAP = {
+                "perceptual":             "PERCEPTUAL",
+                "relative":               "RELATIVE_COLORIMETRIC",
+                "relative-colorimetric":  "RELATIVE_COLORIMETRIC",
+                "saturation":             "SATURATION",
+                "absolute":               "ABSOLUTE_COLORIMETRIC",
+                "absolute-colorimetric":  "ABSOLUTE_COLORIMETRIC",
+            }
+            intent_enum_name = INTENT_MAP.get(intent_str, "PERCEPTUAL")
+            intent = getattr(Gimp.ColorRenderingIntent, intent_enum_name,
+                             Gimp.ColorRenderingIntent.PERCEPTUAL)
+            bytes_data = self._load_icc_bytes(profile_path)
+            gbytes = GLib.Bytes.new(bytes_data)
+            image = self._get_image(image_index)
+            image.convert_color_profile(gbytes, intent, bool(params.get("bpc", True)))
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":       "success",
+                "profile_path": profile_path,
+                "intent":       intent_str,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _assign_profile(self, params):
+        """Tag an image with a new ICC profile without converting pixels."""
+        try:
+            from gi.repository import GLib
+            image_index  = int(params.get("image_index", 0))
+            profile_path = params.get("profile_path") or ""
+            bytes_data = self._load_icc_bytes(profile_path)
+            gbytes = GLib.Bytes.new(bytes_data)
+            image = self._get_image(image_index)
+            image.set_color_profile(gbytes)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":       "success",
+                "profile_path": profile_path,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _get_current_profile(self, params):
+        """Return the ICC profile currently tagged on the image.
+
+        Returns a description where possible. The raw bytes are not sent
+        across the wire — callers that need them should write the image
+        out and inspect the file.
+        """
+        try:
+            image_index = int(params.get("image_index", 0))
+            image = self._get_image(image_index)
+            profile = None
+            try:
+                profile = image.get_color_profile()
+            except Exception:
+                profile = None
+            if profile is None:
+                return {"status": "success", "results": {
+                    "status":      "success",
+                    "has_profile": False,
+                }}
+            description = None
+            for attr in ("get_description", "get_label"):
+                try:
+                    fn = getattr(profile, attr, None)
+                    if fn is not None:
+                        description = fn()
+                        if description:
+                            break
+                except Exception:
+                    continue
+            size = None
+            try:
+                raw = profile.get_data() if hasattr(profile, "get_data") else None
+                if raw is not None:
+                    size = len(bytes(raw))
+            except Exception:
+                pass
+            return {"status": "success", "results": {
+                "status":      "success",
+                "has_profile": True,
+                "description": description,
+                "size_bytes":  size,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
