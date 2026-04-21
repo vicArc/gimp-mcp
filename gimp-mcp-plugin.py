@@ -1581,8 +1581,13 @@ class MCPPlugin(Gimp.PlugIn):
             "none":   Gimp.InterpolationType.NONE,
         }.get(interp.lower(), Gimp.InterpolationType.CUBIC)
 
-    def _export_to_path(self, image, file_path, fmt, quality, flatten):
-        """Export image to file_path in the given format. Returns file size in bytes."""
+    def _export_to_path(self, image, file_path, fmt, quality, flatten, extra_props=None):
+        """Export image to file_path in the given format. Returns file size in bytes.
+
+        extra_props, when provided, is a dict of format-specific property
+        overrides (e.g. {"compression": 7} for PNG, {"sub-sampling": 2} for
+        JPEG). Unknown properties are silently ignored per existing behavior.
+        """
         from gi.repository import Gio
         if flatten:
             image = image.duplicate()
@@ -1633,6 +1638,12 @@ class MCPPlugin(Gimp.PlugIn):
                             cfg.set_property("quality", float(quality))
                         except Exception:
                             pass
+                    if extra_props:
+                        for k, v in extra_props.items():
+                            try:
+                                cfg.set_property(k, v)
+                            except Exception:
+                                pass
                 except Exception:
                     pass
                 proc.run(cfg)
@@ -1819,23 +1830,35 @@ class MCPPlugin(Gimp.PlugIn):
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
     def _export_image(self, params):
-        """Export image to raster format."""
+        """Export image to raster format, optionally with format-specific knobs."""
         try:
-            image_index = int(params.get("image_index", 0))
-            file_path   = params.get("file_path", "")
-            fmt         = params.get("format", "png")
-            quality     = int(params.get("quality", 90))
-            flatten     = bool(params.get("flatten", True))
+            image_index     = int(params.get("image_index", 0))
+            file_path       = params.get("file_path", "")
+            fmt             = params.get("format", "png")
+            quality         = int(params.get("quality", 90))
+            flatten         = bool(params.get("flatten", True))
+            png_compression = params.get("png_compression")
+            jpeg_subsample  = params.get("jpeg_subsample")
+
+            extra_props = {}
+            fmt_lower = fmt.lower()
+            if fmt_lower == "png" and png_compression is not None:
+                extra_props["compression"] = int(png_compression)
+            if fmt_lower in ("jpeg", "jpg") and jpeg_subsample is not None:
+                extra_props["sub-sampling"] = int(jpeg_subsample)
+
             image = self._get_image(image_index)
-            file_size = self._export_to_path(image, file_path, fmt, quality, flatten)
+            file_size = self._export_to_path(image, file_path, fmt, quality, flatten,
+                                             extra_props or None)
             Gimp.displays_flush()
             return {
                 "status": "success",
                 "results": {
-                    "status": "success",
-                    "file_path": file_path,
-                    "format": fmt,
+                    "status":          "success",
+                    "file_path":       file_path,
+                    "format":          fmt,
                     "file_size_bytes": file_size,
+                    "extra_props":     extra_props,
                 }
             }
         except Exception as e:

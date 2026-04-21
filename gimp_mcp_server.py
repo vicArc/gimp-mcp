@@ -627,7 +627,9 @@ def export_image(
     format: str = "png",
     quality: int = 90,
     flatten: bool = True,
-    image_index: int = 0
+    png_compression: int | None = None,
+    jpeg_subsample: int | None = None,
+    image_index: int = 0,
 ) -> dict:
     """Export the current image to a raster file (PNG, JPEG, WEBP, TIFF).
 
@@ -636,19 +638,23 @@ def export_image(
     - format: Output format — "png" (default), "jpeg", "webp", "tiff"
     - quality: JPEG/WEBP quality 1-100 (default 90; ignored for PNG/TIFF)
     - flatten: Flatten all layers before export (default True)
+    - png_compression: PNG zlib level 0-9 (default builds use 9); ignored for other formats
+    - jpeg_subsample: JPEG chroma sub-sampling 0..3 (0 = 4:4:4 no subsampling,
+      1 = 4:2:2 horizontal, 2 = 4:2:0 full, 3 = 4:1:1). Ignored for other formats
     - image_index: Index of the image to export (default 0)
 
-    Returns:
-    - status, file_path, format, file_size_bytes
+    Returns: {file_path, format, file_size_bytes, extra_props}
     """
     try:
         conn = get_gimp_connection()
         result = conn.send_command("export_image", {
-            "file_path": file_path,
-            "format": format,
-            "quality": quality,
-            "flatten": flatten,
-            "image_index": image_index,
+            "file_path":       file_path,
+            "format":          format,
+            "quality":         quality,
+            "flatten":         flatten,
+            "png_compression": png_compression,
+            "jpeg_subsample":  jpeg_subsample,
+            "image_index":     image_index,
         })
         if result["status"] == "success":
             return result["results"]
