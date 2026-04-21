@@ -5363,6 +5363,29 @@ class MCPPlugin(Gimp.PlugIn):
             pass
         return None
 
+    def _invert_layer_mask(self, params):
+        """Invert a layer's mask in place via drawable.invert."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            image = self._get_image(image_index)
+            layer = self._resolve_layer(image, layer_name, None)
+            mask  = layer.get_mask()
+            if mask is None:
+                return {"status": "error", "error": f"layer '{layer.get_name()}' has no mask"}
+            image.undo_group_start()
+            try:
+                mask.invert()
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":     "success",
+                "layer_name": layer.get_name(),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     def _layer_mask_to_selection(self, params):
         """Load a layer's mask into the selection via image.select_item."""
         try:
