@@ -732,6 +732,40 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def color_temperature(
+    ctx: Context,
+    kelvin: float = 6500,
+    tint: float = 0,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Warm / cool color grading via gegl:color-temperature.
+
+    Parameters:
+    - kelvin: Intended temperature (default 6500 = neutral)
+    - tint: Green/magenta tint offset (default 0)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, kelvin, tint}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("color_temperature", {
+            "kelvin":      kelvin,
+            "tint":        tint,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"color_temperature failed: {e}")
+
+
+@mcp.tool()
 def posterize(
     ctx: Context,
     levels: int = 4,
