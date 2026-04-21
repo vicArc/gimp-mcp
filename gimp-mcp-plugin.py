@@ -333,6 +333,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._modify_selection(j.get("params", {}))
             elif "type" in j and j["type"] == "alpha_to_selection":
                 return self._alpha_to_selection(j.get("params", {}))
+            elif "type" in j and j["type"] == "fuzzy_select":
+                return self._fuzzy_select(j.get("params", {}))
             # ── Category 5: Layer Operations ──────────────────────────────────
             elif "type" in j and j["type"] == "create_layer":
                 return self._create_layer(j.get("params", {}))
@@ -2493,6 +2495,51 @@ class MCPPlugin(Gimp.PlugIn):
                 fn(image, amount)
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _fuzzy_select(self, params):
+        """Fuzzy-select the contiguous-color region at a pixel.
+
+        Unlike select_by_color (which grabs all regions of the sampled color),
+        fuzzy_select grabs only the one region enclosing (x, y). Mirrors the
+        bucket-fill / magic-wand primitive.
+        """
+        try:
+            image_index    = int(params.get("image_index", 0))
+            layer_name     = params.get("layer_name", None)
+            x              = float(params.get("x", 0))
+            y              = float(params.get("y", 0))
+            threshold      = float(params.get("threshold", 15.0))
+            sample_merged  = bool(params.get("sample_merged", False))
+            operation      = (params.get("operation") or "replace").lower()
+            antialias      = bool(params.get("antialias", True))
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            op = self._channel_ops_from_string(operation)
+
+            Gimp.context_push()
+            try:
+                try: Gimp.context_set_sample_threshold(threshold / 255.0 if threshold > 1 else threshold)
+                except Exception: pass
+                try: Gimp.context_set_sample_merged(sample_merged)
+                except Exception: pass
+                try: Gimp.context_set_antialias(antialias)
+                except Exception: pass
+                image.select_contiguous_color(op, drawable, x, y)
+            finally:
+                Gimp.context_pop()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":        "success",
+                "layer_name":    drawable.get_name(),
+                "x":             x,
+                "y":             y,
+                "threshold":     threshold,
+                "sample_merged": sample_merged,
+                "antialias":     antialias,
+                "operation":     operation,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

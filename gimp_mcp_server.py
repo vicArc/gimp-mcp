@@ -1436,6 +1436,55 @@ def modify_selection(
 
 
 @mcp.tool()
+def fuzzy_select(
+    ctx: Context,
+    x: float,
+    y: float,
+    threshold: float = 15.0,
+    sample_merged: bool = False,
+    operation: str = "replace",
+    antialias: bool = True,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Fuzzy-select the contiguous-color region at (x, y).
+
+    Complements select_by_color (which grabs every matching region):
+    fuzzy_select grabs only the region enclosing the picked pixel — the
+    bucket-fill / magic-wand primitive.
+
+    Parameters:
+    - x, y: Pixel to sample from (image coordinates)
+    - threshold: Match tolerance (0..255; also accepts 0..1 floats)
+    - sample_merged: Sample from composite instead of the given drawable
+    - operation: "replace" (default), "add", "subtract", "intersect"
+    - antialias: Smooth the selection boundary (default True)
+    - layer_name: Drawable to sample (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, x, y, threshold, sample_merged, antialias, operation}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("fuzzy_select", {
+            "x":             x,
+            "y":             y,
+            "threshold":     threshold,
+            "sample_merged": sample_merged,
+            "operation":     operation,
+            "antialias":     antialias,
+            "layer_name":    layer_name,
+            "image_index":   image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"fuzzy_select failed: {e}")
+
+
+@mcp.tool()
 def alpha_to_selection(
     ctx: Context,
     layer_name: str | None = None,
