@@ -5363,6 +5363,60 @@ class MCPPlugin(Gimp.PlugIn):
             pass
         return None
 
+    def _quick_mask_toggle(self, params):
+        """Enter / exit quick-mask paint mode.
+
+        Quick-mask state isn't exposed via the 3.2 PDB or the Python
+        binding in most builds. This implementation probes every known
+        access path and returns a clear error if none are available, so
+        callers can fall back to UI control without silent misbehavior.
+        """
+        try:
+            image_index = int(params.get("image_index", 0))
+            requested   = params.get("state")  # True / False / None(=toggle)
+            image = self._get_image(image_index)
+
+            # Probe access paths in order of preference.
+            # 1. Python method form (future-proofing)
+            if hasattr(image, "get_quick_mask_state") and hasattr(image, "set_quick_mask_state"):
+                current = bool(image.get_quick_mask_state())
+                new_state = (not current) if requested is None else bool(requested)
+                image.set_quick_mask_state(new_state)
+                Gimp.displays_flush()
+                return {"status": "success", "results": {
+                    "status":     "success",
+                    "previous":   current,
+                    "new_state":  new_state,
+                }}
+
+            # 2. PDB procedure form
+            pdb = Gimp.get_pdb()
+            get_proc = pdb.lookup_procedure("gimp-image-get-quick-mask-state")
+            set_proc = pdb.lookup_procedure("gimp-image-set-quick-mask-state")
+            if get_proc is not None and set_proc is not None:
+                gcfg = get_proc.create_config()
+                gcfg.set_property("image", image)
+                gresult = get_proc.run(gcfg)
+                current = bool(gresult.index(1)) if gresult is not None else False
+                new_state = (not current) if requested is None else bool(requested)
+                scfg = set_proc.create_config()
+                scfg.set_property("image", image)
+                scfg.set_property("mask-active", new_state)
+                set_proc.run(scfg)
+                Gimp.displays_flush()
+                return {"status": "success", "results": {
+                    "status":    "success",
+                    "previous":  current,
+                    "new_state": new_state,
+                }}
+
+            return {"status": "error",
+                    "error": "quick_mask_toggle: neither Gimp.Image.get_quick_mask_state "
+                             "nor gimp-image-get-quick-mask-state is available in this "
+                             "GIMP build — use the UI (Shift+Q) to toggle quick mask"}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     def _set_channel_properties(self, params):
         """Set opacity / color / visibility on a named channel."""
         try:

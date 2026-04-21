@@ -3568,6 +3568,38 @@ def path_create(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def quick_mask_toggle(
+    ctx: Context,
+    state: bool | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Enter / exit quick-mask paint mode.
+
+    Quick-mask state is not exposed in every GIMP 3.2 build — the tool
+    probes both the Python binding and the PDB and returns a clear
+    "not available" error when neither path is present.
+
+    Parameters:
+    - state: True to enable, False to disable, None to toggle (default)
+    - image_index: Target image index (default 0)
+
+    Returns: {previous, new_state} on success
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("quick_mask_toggle", {
+            "state":       state,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"quick_mask_toggle failed: {e}")
+
+
+@mcp.tool()
 def set_channel_properties(
     ctx: Context,
     channel_name: str,
