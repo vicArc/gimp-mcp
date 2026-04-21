@@ -732,6 +732,43 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def apply_motion_blur(
+    ctx: Context,
+    length: float = 10,
+    angle: float = 0,
+    type: str = "linear",
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Directional motion blur — linear / circular / zoom.
+
+    Parameters:
+    - length: Linear blur length (px) or zoom factor source (% scale)
+    - angle: Angle for linear / circular types (degrees)
+    - type: "linear" (default), "circular", or "zoom"
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, type, length, angle}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_motion_blur", {
+            "length":      length,
+            "angle":       angle,
+            "type":        type,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_motion_blur failed: {e}")
+
+
+@mcp.tool()
 def apply_unsharp_mask(
     ctx: Context,
     radius: float = 2.0,
