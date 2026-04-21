@@ -732,6 +732,40 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def exposure(
+    ctx: Context,
+    ev_stops: float = 0.0,
+    black_level: float = 0.0,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Stops-based exposure adjustment via gegl:exposure.
+
+    Parameters:
+    - ev_stops: Exposure in stops (positive = brighter, negative = darker)
+    - black_level: Black-point offset (default 0)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, ev_stops, black_level}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("exposure", {
+            "ev_stops":    ev_stops,
+            "black_level": black_level,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"exposure failed: {e}")
+
+
+@mcp.tool()
 def color_temperature(
     ctx: Context,
     kelvin: float = 6500,

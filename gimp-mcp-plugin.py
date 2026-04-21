@@ -322,6 +322,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._posterize(j.get("params", {}))
             elif "type" in j and j["type"] == "color_temperature":
                 return self._color_temperature(j.get("params", {}))
+            elif "type" in j and j["type"] == "exposure":
+                return self._exposure(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2055,6 +2057,31 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _exposure(self, params):
+        """Apply gegl:exposure (stops-based) to a layer."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            ev_stops    = float(params.get("ev_stops", 0.0))
+            black_level = float(params.get("black_level", 0.0))
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            image.undo_group_start()
+            try:
+                self._apply_gegl_filter(image, drawable, "gegl:exposure", {
+                    "black-level": black_level,
+                    "exposure":    ev_stops,
+                })
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "layer_name": drawable.get_name(),
+                "ev_stops": ev_stops, "black_level": black_level,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
