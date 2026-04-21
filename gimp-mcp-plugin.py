@@ -5363,6 +5363,37 @@ class MCPPlugin(Gimp.PlugIn):
             pass
         return None
 
+    def _duplicate_channel(self, params):
+        """Duplicate a channel via channel.copy + image.insert_channel."""
+        try:
+            image_index  = int(params.get("image_index", 0))
+            channel_name = params.get("channel_name") or ""
+            new_name     = (params.get("new_name") or "").strip()
+            if not channel_name:
+                return {"status": "error", "error": "duplicate_channel: 'channel_name' is required"}
+
+            image = self._get_image(image_index)
+            src = self._resolve_channel(image, channel_name)
+            if src is None:
+                return {"status": "error", "error": f"channel not found: {channel_name}"}
+
+            dup = src.copy()
+            if dup is None:
+                return {"status": "error", "error": "channel.copy returned None"}
+            if new_name:
+                try: dup.set_name(new_name)
+                except Exception: pass
+            image.insert_channel(dup, None, -1)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":        "success",
+                "source_name":   channel_name,
+                "new_id":        dup.get_id(),
+                "new_name":      dup.get_name(),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     def _channel_to_selection(self, params):
         """Load a named channel back into the selection via image.select_item."""
         try:

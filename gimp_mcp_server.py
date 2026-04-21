@@ -3568,6 +3568,37 @@ def path_create(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def duplicate_channel(
+    ctx: Context,
+    channel_name: str,
+    new_name: str = "",
+    image_index: int = 0,
+) -> dict:
+    """Duplicate a named channel and insert the copy into the image.
+
+    Parameters:
+    - channel_name: Source channel's name
+    - new_name: Override the copy's name (defaults to GIMP's auto-generated name)
+    - image_index: Target image index (default 0)
+
+    Returns: {source_name, new_id, new_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("duplicate_channel", {
+            "channel_name": channel_name,
+            "new_name":     new_name,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"duplicate_channel failed: {e}")
+
+
+@mcp.tool()
 def channel_to_selection(
     ctx: Context,
     channel_name: str,
