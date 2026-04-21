@@ -496,6 +496,22 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._path_stroke(j.get("params", {}))
             elif "type" in j and j["type"] == "import_svg_as_path":
                 return self._import_svg_as_path(j.get("params", {}))
+            elif "type" in j and j["type"] == "list_paths":
+                return self._list_paths(j.get("params", {}))
+            elif "type" in j and j["type"] == "rename_path":
+                return self._rename_path(j.get("params", {}))
+            elif "type" in j and j["type"] == "delete_path":
+                return self._delete_path(j.get("params", {}))
+            elif "type" in j and j["type"] == "set_path_visible":
+                return self._set_path_visible(j.get("params", {}))
+            elif "type" in j and j["type"] == "selection_to_path":
+                return self._selection_to_path(j.get("params", {}))
+            elif "type" in j and j["type"] == "export_path_as_svg":
+                return self._export_path_as_svg(j.get("params", {}))
+            elif "type" in j and j["type"] == "add_text_on_path":
+                return self._add_text_on_path(j.get("params", {}))
+            elif "type" in j and j["type"] == "text_layer_to_path":
+                return self._text_layer_to_path(j.get("params", {}))
             # ── Category 13: Channels & Masks ─────────────────────────────────
             elif "type" in j and j["type"] == "list_channels":
                 return self._list_channels(j.get("params", {}))
@@ -5145,6 +5161,206 @@ class MCPPlugin(Gimp.PlugIn):
             if p.get_name() == path_name:
                 return p
         return None
+
+    def _list_paths(self, params):
+        """Enumerate an image's paths with {id, name, visible}."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            image = self._get_image(image_index)
+            paths = []
+            for p in (image.get_paths() or []):
+                try:    visible = bool(p.get_visible())
+                except Exception: visible = None
+                paths.append({
+                    "id":      p.get_id(),
+                    "name":    p.get_name(),
+                    "visible": visible,
+                })
+            return {"status": "success", "results": {
+                "status": "success",
+                "count":  len(paths),
+                "paths":  paths,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _rename_path(self, params):
+        """Rename a path via path.set_name."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            path_name   = params.get("path_name") or ""
+            new_name    = (params.get("new_name") or "").strip()
+            if not path_name or not new_name:
+                return {"status": "error",
+                        "error": "rename_path: 'path_name' and 'new_name' are required"}
+            image = self._get_image(image_index)
+            path  = self._resolve_path(image, path_name)
+            if path is None:
+                return {"status": "error", "error": f"path not found: {path_name}"}
+            path.set_name(new_name)
+            return {"status": "success", "results": {
+                "status": "success", "old_name": path_name, "new_name": path.get_name(),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _delete_path(self, params):
+        """Remove a path via image.remove_path."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            path_name   = params.get("path_name") or ""
+            if not path_name:
+                return {"status": "error", "error": "delete_path: 'path_name' is required"}
+            image = self._get_image(image_index)
+            path  = self._resolve_path(image, path_name)
+            if path is None:
+                return {"status": "error", "error": f"path not found: {path_name}"}
+            image.remove_path(path)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {"status": "success", "path_name": path_name}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _set_path_visible(self, params):
+        """Toggle a path's visibility via path.set_visible."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            path_name   = params.get("path_name") or ""
+            visible     = bool(params.get("visible", True))
+            if not path_name:
+                return {"status": "error", "error": "set_path_visible: 'path_name' is required"}
+            image = self._get_image(image_index)
+            path  = self._resolve_path(image, path_name)
+            if path is None:
+                return {"status": "error", "error": f"path not found: {path_name}"}
+            path.set_visible(visible)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "path_name": path_name, "visible": visible,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _selection_to_path(self, params):
+        """Convert the current selection to a path via plug-in-sel2path.
+
+        Uses GIMP's built-in selection-to-path plug-in with its default
+        tuning. Callers that need finer control can drive the procedure
+        directly via apply_filter / call_api.
+        """
+        try:
+            image_index = int(params.get("image_index", 0))
+            image = self._get_image(image_index)
+            layers = image.get_layers() or []
+            drawable = (image.get_selected_layers() or layers or [None])[0]
+            if drawable is None:
+                return {"status": "error", "error": "selection_to_path: image has no layers"}
+
+            paths_before = {p.get_id() for p in (image.get_paths() or [])}
+            pdb  = Gimp.get_pdb()
+            proc = pdb.lookup_procedure("plug-in-sel2path")
+            if proc is None:
+                return {"status": "error", "error": "plug-in-sel2path not available"}
+            image.undo_group_start()
+            try:
+                cfg = proc.create_config()
+                cfg.set_property("run-mode",  Gimp.RunMode.NONINTERACTIVE)
+                cfg.set_property("image",     image)
+                cfg.set_property("drawables", [drawable])
+                proc.run(cfg)
+            finally:
+                image.undo_group_end()
+            new_paths = [p for p in (image.get_paths() or []) if p.get_id() not in paths_before]
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":    "success",
+                "new_paths": [{"id": p.get_id(), "name": p.get_name()} for p in new_paths],
+                "count":     len(new_paths),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _export_path_as_svg(self, params):
+        """Export a named path to an SVG file via gimp-image-export-path-to-file."""
+        try:
+            from gi.repository import Gio
+            image_index = int(params.get("image_index", 0))
+            path_name   = params.get("path_name") or ""
+            file_path   = params.get("file_path") or ""
+            if not path_name:
+                return {"status": "error", "error": "export_path_as_svg: 'path_name' is required"}
+            if not file_path:
+                return {"status": "error", "error": "export_path_as_svg: 'file_path' is required"}
+            image = self._get_image(image_index)
+            path  = self._resolve_path(image, path_name)
+            if path is None:
+                return {"status": "error", "error": f"path not found: {path_name}"}
+            pdb  = Gimp.get_pdb()
+            proc = pdb.lookup_procedure("gimp-image-export-path-to-file")
+            if proc is None:
+                return {"status": "error",
+                        "error": "gimp-image-export-path-to-file not available"}
+            cfg = proc.create_config()
+            cfg.set_property("image", image)
+            cfg.set_property("file",  Gio.File.new_for_path(file_path))
+            cfg.set_property("path",  path)
+            proc.run(cfg)
+            size_bytes = os.path.getsize(file_path) if os.path.exists(file_path) else None
+            return {"status": "success", "results": {
+                "status":     "success",
+                "path_name":  path_name,
+                "file_path":  file_path,
+                "size_bytes": size_bytes,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _add_text_on_path(self, params):
+        """Render text along a path.
+
+        Text-on-path is a UI-only feature in GIMP 3.2's PDB — there is no
+        single procedure that renders text warped to a curve. This tool
+        returns a clear 'not available' error with a pointer to the
+        UI workflow or the two-step alternative (text_layer_to_path +
+        path_stroke) so callers get structured feedback instead of a
+        silent fallback.
+        """
+        return {"status": "error",
+                "error": "add_text_on_path: GIMP 3.2 does not expose a text-on-path PDB "
+                         "procedure (Layer → Text along path is UI-only). Workaround: "
+                         "use add_text to lay the text, then text_layer_to_path + "
+                         "path_stroke for a curve-aligned outline."}
+
+    def _text_layer_to_path(self, params):
+        """Convert a text layer's glyphs to a path via Gimp.Path.new_from_text_layer."""
+        try:
+            image_index  = int(params.get("image_index", 0))
+            text_layer_name = params.get("text_layer_name") or ""
+            new_path_name   = (params.get("new_path_name") or "").strip()
+            if not text_layer_name:
+                return {"status": "error",
+                        "error": "text_layer_to_path: 'text_layer_name' is required"}
+            image = self._get_image(image_index)
+            layer = self._resolve_layer(image, text_layer_name, None)
+            if not isinstance(layer, Gimp.TextLayer):
+                return {"status": "error",
+                        "error": f"layer '{layer.get_name()}' is not a text layer"}
+            path = Gimp.Path.new_from_text_layer(image, layer)
+            if path is None:
+                return {"status": "error", "error": "Gimp.Path.new_from_text_layer returned None"}
+            if new_path_name:
+                try: path.set_name(new_path_name)
+                except Exception: pass
+            image.insert_path(path, None, -1)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":     "success",
+                "layer_name": text_layer_name,
+                "path_id":    path.get_id(),
+                "path_name":  path.get_name(),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
     def _import_svg_as_path(self, params):
         """Import an SVG file as one or more paths via gimp-image-import-paths-from-file.

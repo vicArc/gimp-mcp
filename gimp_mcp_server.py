@@ -3563,6 +3563,241 @@ def path_create(
         raise Exception(f"path_create failed: {e}")
 
 
+@mcp.tool()
+def list_paths(ctx: Context, image_index: int = 0) -> dict:
+    """Enumerate an image's paths.
+
+    Parameters:
+    - image_index: Target image index (default 0)
+
+    Returns: {count, paths: [{id, name, visible}, ...]}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_paths", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_paths failed: {e}")
+
+
+@mcp.tool()
+def rename_path(
+    ctx: Context,
+    path_name: str,
+    new_name: str,
+    image_index: int = 0,
+) -> dict:
+    """Rename a path.
+
+    Parameters:
+    - path_name: Current path name
+    - new_name: Replacement name
+    - image_index: Target image index (default 0)
+
+    Returns: {old_name, new_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("rename_path", {
+            "path_name":   path_name,
+            "new_name":    new_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"rename_path failed: {e}")
+
+
+@mcp.tool()
+def delete_path(
+    ctx: Context,
+    path_name: str,
+    image_index: int = 0,
+) -> dict:
+    """Remove a path from an image.
+
+    Parameters:
+    - path_name: Path to remove
+    - image_index: Target image index (default 0)
+
+    Returns: {path_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("delete_path", {
+            "path_name":   path_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"delete_path failed: {e}")
+
+
+@mcp.tool()
+def set_path_visible(
+    ctx: Context,
+    path_name: str,
+    visible: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Toggle a path's visibility.
+
+    Parameters:
+    - path_name: Target path name
+    - visible: Visibility flag (default True)
+    - image_index: Target image index (default 0)
+
+    Returns: {path_name, visible}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("set_path_visible", {
+            "path_name":   path_name,
+            "visible":     visible,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"set_path_visible failed: {e}")
+
+
+@mcp.tool()
+def selection_to_path(ctx: Context, image_index: int = 0) -> dict:
+    """Convert the current selection to a path via plug-in-sel2path.
+
+    Uses GIMP's built-in selection-to-path plug-in with its default tuning.
+
+    Parameters:
+    - image_index: Target image index (default 0)
+
+    Returns: {new_paths: [{id, name}, ...], count}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("selection_to_path", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"selection_to_path failed: {e}")
+
+
+@mcp.tool()
+def export_path_as_svg(
+    ctx: Context,
+    path_name: str,
+    file_path: str,
+    image_index: int = 0,
+) -> dict:
+    """Export a named path to an SVG file.
+
+    Parameters:
+    - path_name: Path to export
+    - file_path: Absolute path for the output .svg file
+    - image_index: Target image index (default 0)
+
+    Returns: {path_name, file_path, size_bytes}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_path_as_svg", {
+            "path_name":   path_name,
+            "file_path":   file_path,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_path_as_svg failed: {e}")
+
+
+@mcp.tool()
+def add_text_on_path(
+    ctx: Context,
+    path_name: str,
+    text: str,
+    font: str = "Sans",
+    size: int = 24,
+    color: str = "black",
+    image_index: int = 0,
+) -> dict:
+    """Render text along a path.
+
+    Text-on-path is a UI-only feature in GIMP 3.2's PDB — there is no
+    single procedure that renders text warped to a curve. This tool
+    returns a clear "not available" error with a pointer to the two-step
+    workaround (add_text + text_layer_to_path + path_stroke) so callers
+    get structured feedback instead of a silent fallback.
+
+    Parameters kept for API stability across builds that may ship the
+    feature later.
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("add_text_on_path", {
+            "path_name":   path_name,
+            "text":        text,
+            "font":        font,
+            "size":        size,
+            "color":       color,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"add_text_on_path failed: {e}")
+
+
+@mcp.tool()
+def text_layer_to_path(
+    ctx: Context,
+    text_layer_name: str,
+    new_path_name: str = "",
+    image_index: int = 0,
+) -> dict:
+    """Convert a text layer's rendered glyphs to an editable path.
+
+    Wraps Gimp.Path.new_from_text_layer + image.insert_path.
+
+    Parameters:
+    - text_layer_name: Source text layer name
+    - new_path_name: Override the new path's name (default auto-generated)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, path_id, path_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("text_layer_to_path", {
+            "text_layer_name": text_layer_name,
+            "new_path_name":   new_path_name,
+            "image_index":     image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"text_layer_to_path failed: {e}")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CATEGORY 13 — Channels & Masks
 # ─────────────────────────────────────────────────────────────────────────────
