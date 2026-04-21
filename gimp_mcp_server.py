@@ -3113,6 +3113,73 @@ def get_pixel_color(
 
 
 @mcp.tool()
+def begin_transaction(ctx: Context, name: str, image_index: int = 0) -> dict:
+    """Open a named undo group. Pair with commit_transaction or rollback_transaction.
+
+    Enables "try a multi-step op, rollback on failure" agent loops:
+    begin → run several ops → commit on success or rollback on error.
+
+    Parameters:
+    - name: Unique identifier (must not collide with an already-active transaction)
+    - image_index: Target image index (default 0)
+
+    Returns: {name, image_index, active}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("begin_transaction", {
+            "name":        name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"begin_transaction failed: {e}")
+
+
+@mcp.tool()
+def commit_transaction(ctx: Context, name: str) -> dict:
+    """Close a named undo group and keep its changes.
+
+    Parameters:
+    - name: Transaction identifier passed to begin_transaction
+
+    Returns: {name, image_index, active}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("commit_transaction", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"commit_transaction failed: {e}")
+
+
+@mcp.tool()
+def rollback_transaction(ctx: Context, name: str) -> dict:
+    """Close a named undo group and undo every operation inside it.
+
+    Parameters:
+    - name: Transaction identifier passed to begin_transaction
+
+    Returns: {name, image_index, rolled_back, active}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("rollback_transaction", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"rollback_transaction failed: {e}")
+
+
+@mcp.tool()
 def get_canvas_info(ctx: Context, image_index: int = 0) -> dict:
     """Consolidated snapshot of an image's state in one round-trip.
 

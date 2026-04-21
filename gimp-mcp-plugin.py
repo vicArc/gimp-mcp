@@ -56,6 +56,8 @@ class MCPPlugin(Gimp.PlugIn):
         self.context = {}
         exec("from gi.repository import Gimp", self.context)
         self.auto_disconnect_client = True
+        # name → image_index mapping for begin/commit/rollback_transaction
+        self._active_transactions = {}
 
     def do_set_i18n(self, procname):
         # Plugin has no translations; tell GIMP so it stops logging
@@ -468,6 +470,12 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._warp_region(j.get("params", {}))
             elif "type" in j and j["type"] == "get_canvas_info":
                 return self._get_canvas_info(j.get("params", {}))
+            elif "type" in j and j["type"] == "begin_transaction":
+                return self._begin_transaction(j.get("params", {}))
+            elif "type" in j and j["type"] == "commit_transaction":
+                return self._commit_transaction(j.get("params", {}))
+            elif "type" in j and j["type"] == "rollback_transaction":
+                return self._rollback_transaction(j.get("params", {}))
             # ── Category 11: Discovery (3.2 migration helpers) ───────────────
             elif "type" in j and j["type"] == "get_pdb_procedure_info":
                 return self._get_pdb_procedure_info(j.get("params", {}))
@@ -4662,6 +4670,75 @@ class MCPPlugin(Gimp.PlugIn):
                     "alpha":     a,
                 }
             }
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _begin_transaction(self, params):
+        """Open a named undo group on an image. Pair with commit or rollback."""
+        try:
+            name        = (params.get("name") or "").strip()
+            image_index = int(params.get("image_index", 0))
+            if not name:
+                return {"status": "error", "error": "begin_transaction: 'name' is required"}
+            if name in self._active_transactions:
+                return {"status": "error",
+                        "error": f"transaction '{name}' is already active — commit or rollback first"}
+            image = self._get_image(image_index)
+            image.undo_group_start()
+            self._active_transactions[name] = image_index
+            return {"status": "success", "results": {
+                "status":      "success",
+                "name":        name,
+                "image_index": image_index,
+                "active":      sorted(self._active_transactions.keys()),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _commit_transaction(self, params):
+        """Close a named undo group on its recorded image."""
+        try:
+            name = (params.get("name") or "").strip()
+            if not name:
+                return {"status": "error", "error": "commit_transaction: 'name' is required"}
+            image_index = self._active_transactions.pop(name, None)
+            if image_index is None:
+                return {"status": "error", "error": f"no active transaction named '{name}'"}
+            image = self._get_image(image_index)
+            image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":      "success",
+                "name":        name,
+                "image_index": image_index,
+                "active":      sorted(self._active_transactions.keys()),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _rollback_transaction(self, params):
+        """Close and undo a named undo group (everything inside rolls back)."""
+        try:
+            name = (params.get("name") or "").strip()
+            if not name:
+                return {"status": "error", "error": "rollback_transaction: 'name' is required"}
+            image_index = self._active_transactions.pop(name, None)
+            if image_index is None:
+                return {"status": "error", "error": f"no active transaction named '{name}'"}
+            image = self._get_image(image_index)
+            image.undo_group_end()
+            try:
+                image.undo()
+            except Exception:
+                pass
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":      "success",
+                "name":        name,
+                "image_index": image_index,
+                "rolled_back": True,
+                "active":      sorted(self._active_transactions.keys()),
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
