@@ -274,6 +274,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._open_image(j.get("params", {}))
             elif "type" in j and j["type"] == "save_xcf":
                 return self._save_xcf(j.get("params", {}))
+            elif "type" in j and j["type"] == "duplicate_image":
+                return self._duplicate_image(j.get("params", {}))
             elif "type" in j and j["type"] == "export_image":
                 return self._export_image(j.get("params", {}))
             elif "type" in j and j["type"] == "batch_export":
@@ -1699,6 +1701,29 @@ class MCPPlugin(Gimp.PlugIn):
                     "display_opened": display is not None,
                 }
             }
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _duplicate_image(self, params):
+        """Duplicate an image, attach a display, return the new image's index."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            image = self._get_image(image_index)
+            dup   = image.duplicate()
+            try:
+                Gimp.Display.new(dup)
+            except Exception:
+                pass
+            Gimp.displays_flush()
+            images = Gimp.get_images()
+            dup_id = dup.get_id()
+            new_index = next((i for i, im in enumerate(images) if im.get_id() == dup_id), len(images) - 1)
+            return {"status": "success", "results": {
+                "status":          "success",
+                "new_image_id":    dup_id,
+                "new_image_index": new_index,
+                "source_image_id": image.get_id(),
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

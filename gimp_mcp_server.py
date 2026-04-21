@@ -566,6 +566,26 @@ def save_xcf(ctx: Context, file_path: str, image_index: int = 0) -> dict:
 
 
 @mcp.tool()
+def duplicate_image(ctx: Context, image_index: int = 0) -> dict:
+    """Duplicate an image (layers + metadata) and open it in a new display.
+
+    Parameters:
+    - image_index: Source image index (default 0)
+
+    Returns: {new_image_id, new_image_index, source_image_id}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("duplicate_image", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"duplicate_image failed: {e}")
+
+
+@mcp.tool()
 def export_image(
     ctx: Context,
     file_path: str,
