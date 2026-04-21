@@ -1415,6 +1415,37 @@ def modify_selection(
         raise Exception(f"modify_selection failed: {e}")
 
 
+@mcp.tool()
+def alpha_to_selection(
+    ctx: Context,
+    layer_name: str | None = None,
+    operation: str = "replace",
+    image_index: int = 0,
+) -> dict:
+    """Load a layer's alpha channel into the selection.
+
+    Parameters:
+    - layer_name: Layer whose alpha drives the selection; defaults to active layer
+    - operation: "replace" (default), "add", "subtract", or "intersect"
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, operation}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("alpha_to_selection", {
+            "layer_name":  layer_name,
+            "operation":   operation,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"alpha_to_selection failed: {e}")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CATEGORY 5 — Layer Operations
 # ─────────────────────────────────────────────────────────────────────────────

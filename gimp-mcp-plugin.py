@@ -329,6 +329,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._invert_selection(j.get("params", {}))
             elif "type" in j and j["type"] == "modify_selection":
                 return self._modify_selection(j.get("params", {}))
+            elif "type" in j and j["type"] == "alpha_to_selection":
+                return self._alpha_to_selection(j.get("params", {}))
             # ── Category 5: Layer Operations ──────────────────────────────────
             elif "type" in j and j["type"] == "create_layer":
                 return self._create_layer(j.get("params", {}))
@@ -2457,6 +2459,25 @@ class MCPPlugin(Gimp.PlugIn):
                 fn(image, amount)
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _alpha_to_selection(self, params):
+        """Load a layer's alpha channel into the selection via image.select_item."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            operation   = (params.get("operation") or "replace").lower()
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            op = self._channel_ops_from_string(operation)
+            image.select_item(op, drawable)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":     "success",
+                "layer_name": drawable.get_name(),
+                "operation":  operation,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
