@@ -3563,6 +3563,33 @@ def path_create(
         raise Exception(f"path_create failed: {e}")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY 13 — Channels & Masks
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def list_channels(ctx: Context, image_index: int = 0) -> dict:
+    """Enumerate an image's saved channels (user-created channels only).
+
+    Built-in RGB / alpha channels are not included — this lists channels
+    created via save_selection_as_channel, decompose, etc.
+
+    Parameters:
+    - image_index: Target image index (default 0)
+
+    Returns: {count, channels: [{id, name, opacity, visible, color}, ...]}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_channels", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_channels failed: {e}")
+
+
 def main():
     mcp.run()
 

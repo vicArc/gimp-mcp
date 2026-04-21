@@ -496,6 +496,27 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._path_stroke(j.get("params", {}))
             elif "type" in j and j["type"] == "import_svg_as_path":
                 return self._import_svg_as_path(j.get("params", {}))
+            # ── Category 13: Channels & Masks ─────────────────────────────────
+            elif "type" in j and j["type"] == "list_channels":
+                return self._list_channels(j.get("params", {}))
+            elif "type" in j and j["type"] == "save_selection_as_channel":
+                return self._save_selection_as_channel(j.get("params", {}))
+            elif "type" in j and j["type"] == "channel_to_selection":
+                return self._channel_to_selection(j.get("params", {}))
+            elif "type" in j and j["type"] == "duplicate_channel":
+                return self._duplicate_channel(j.get("params", {}))
+            elif "type" in j and j["type"] == "delete_channel":
+                return self._delete_channel(j.get("params", {}))
+            elif "type" in j and j["type"] == "rename_channel":
+                return self._rename_channel(j.get("params", {}))
+            elif "type" in j and j["type"] == "set_channel_properties":
+                return self._set_channel_properties(j.get("params", {}))
+            elif "type" in j and j["type"] == "quick_mask_toggle":
+                return self._quick_mask_toggle(j.get("params", {}))
+            elif "type" in j and j["type"] == "layer_mask_to_selection":
+                return self._layer_mask_to_selection(j.get("params", {}))
+            elif "type" in j and j["type"] == "invert_layer_mask":
+                return self._invert_layer_mask(j.get("params", {}))
             elif "cmds" in j:
                 a = ['python-fu-exec', j["cmds"]]
             else:
@@ -5308,6 +5329,64 @@ class MCPPlugin(Gimp.PlugIn):
                 "path_id":    path.get_id(),
                 "num_points": len(points),
                 "closed":     close,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    # =========================================================================
+    # CATEGORY 13 — Channels & Masks
+    # =========================================================================
+
+    def _resolve_channel(self, image, channel_name):
+        """Look up a channel by name in an image. Returns None if not found."""
+        if not channel_name:
+            return None
+        for ch in (image.get_channels() or []):
+            if ch.get_name() == channel_name:
+                return ch
+        return None
+
+    def _color_to_hex(self, color_obj):
+        """Serialize a GeglColor to '#rrggbb' for JSON responses, or None."""
+        if color_obj is None:
+            return None
+        try:
+            rgba = color_obj.get_rgba()
+            if isinstance(rgba, tuple) and len(rgba) >= 3:
+                r, g, b = rgba[0], rgba[1], rgba[2]
+                return "#{:02x}{:02x}{:02x}".format(
+                    max(0, min(255, int(r * 255))),
+                    max(0, min(255, int(g * 255))),
+                    max(0, min(255, int(b * 255))),
+                )
+        except Exception:
+            pass
+        return None
+
+    def _list_channels(self, params):
+        """Enumerate an image's saved channels (not the built-in RGB/A ones)."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            image = self._get_image(image_index)
+            channels = []
+            for ch in (image.get_channels() or []):
+                try:    opacity = float(ch.get_opacity())
+                except Exception: opacity = None
+                try:    visible = bool(ch.get_visible())
+                except Exception: visible = None
+                try:    color = self._color_to_hex(ch.get_color())
+                except Exception: color = None
+                channels.append({
+                    "id":        ch.get_id(),
+                    "name":      ch.get_name(),
+                    "opacity":   opacity,
+                    "visible":   visible,
+                    "color":     color,
+                })
+            return {"status": "success", "results": {
+                "status":   "success",
+                "count":    len(channels),
+                "channels": channels,
             }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
