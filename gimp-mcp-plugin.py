@@ -471,6 +471,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._get_pdb_procedure_info(j.get("params", {}))
             elif "type" in j and j["type"] == "list_gegl_operations":
                 return self._list_gegl_operations(j.get("params", {}))
+            elif "type" in j and j["type"] == "list_blend_modes":
+                return self._list_blend_modes(j.get("params", {}))
             # ── Category 12: Paths ────────────────────────────────────────────
             elif "type" in j and j["type"] == "path_create":
                 return self._path_create(j.get("params", {}))
@@ -4757,6 +4759,33 @@ class MCPPlugin(Gimp.PlugIn):
                     "date":          _attr(proc.get_date),
                     "arguments":     args,
                     "return_values": returns,
+                }
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _list_blend_modes(self, params):
+        """Return the set of blend-mode strings accepted by set_layer_properties / paint_stroke.
+
+        Each entry records the user-facing key, the underlying Gimp.LayerMode
+        enum name, and whether the enum exists in this GIMP build.
+        """
+        try:
+            modes = []
+            for key, enum_name in sorted(self._BLEND_MODE_ENUM_MAP.items()):
+                available = hasattr(Gimp.LayerMode, enum_name)
+                modes.append({
+                    "key":       key,
+                    "enum_name": enum_name,
+                    "available": available,
+                })
+            available_count = sum(1 for m in modes if m["available"])
+            return {
+                "status": "success",
+                "results": {
+                    "count":           len(modes),
+                    "available_count": available_count,
+                    "modes":           modes,
                 }
             }
         except Exception as e:

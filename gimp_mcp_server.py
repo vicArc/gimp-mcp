@@ -3202,6 +3202,27 @@ def get_pdb_procedure_info(ctx: Context, name: str) -> dict:
 
 
 @mcp.tool()
+def list_blend_modes(ctx: Context) -> dict:
+    """List every blend-mode string accepted by set_layer_properties / paint_stroke.
+
+    Each entry has {key, enum_name, available}. available=False means the
+    underlying Gimp.LayerMode enum is not exposed in this GIMP build — using
+    that key falls back to NORMAL.
+
+    Returns: {count, available_count, modes: [{key, enum_name, available}, ...]}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_blend_modes", {})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_blend_modes failed: {e}")
+
+
+@mcp.tool()
 def list_gegl_operations(
     ctx: Context,
     prefix: str = "",
