@@ -2574,27 +2574,68 @@ class MCPPlugin(Gimp.PlugIn):
     # CATEGORY 5 — Layer Operations
     # =========================================================================
 
+    # Map user-friendly blend-mode strings to Gimp.LayerMode enum names.
+    # Resolution is defensive: enums missing from a given 3.2 build fall back
+    # to NORMAL rather than raising, so the table is safe across builds.
+    _BLEND_MODE_ENUM_MAP = {
+        "NORMAL":         "NORMAL",
+        "DISSOLVE":       "DISSOLVE",
+        "MULTIPLY":       "MULTIPLY",
+        "SCREEN":         "SCREEN",
+        "OVERLAY":        "OVERLAY",
+        "DIFFERENCE":     "DIFFERENCE",
+        "ADDITION":       "ADDITION",
+        "SUBTRACT":       "SUBTRACT",
+        "DIVIDE":         "DIVIDE",
+        "DARKEN":         "DARKEN_ONLY",
+        "DARKEN_ONLY":    "DARKEN_ONLY",
+        "LIGHTEN":        "LIGHTEN_ONLY",
+        "LIGHTEN_ONLY":   "LIGHTEN_ONLY",
+        "DODGE":          "DODGE",
+        "BURN":           "BURN",
+        "HARD_LIGHT":     "HARDLIGHT",
+        "HARDLIGHT":      "HARDLIGHT",
+        "SOFT_LIGHT":     "SOFTLIGHT",
+        "SOFTLIGHT":      "SOFTLIGHT",
+        "GRAIN_MERGE":    "GRAIN_MERGE",
+        "GRAIN_EXTRACT":  "GRAIN_EXTRACT",
+        "VIVID_LIGHT":    "VIVID_LIGHT",
+        "LINEAR_LIGHT":   "LINEAR_LIGHT",
+        "PIN_LIGHT":      "PIN_LIGHT",
+        "HARD_MIX":       "HARD_MIX",
+        "LINEAR_BURN":    "LINEAR_BURN",
+        "EXCLUSION":      "EXCLUSION",
+        "MERGE":          "MERGE",
+        "SPLIT":          "SPLIT",
+        "COLOR_ERASE":    "COLOR_ERASE",
+        "ERASE":          "ERASE",
+        "REPLACE":        "REPLACE",
+        "ANTI_ERASE":     "ANTI_ERASE",
+        "BEHIND":         "BEHIND",
+        "PASS_THROUGH":   "PASS_THROUGH",
+        # HSV / HSL / LCH family — friendly aliases first, explicit names after
+        "HUE":            "HSV_HUE",
+        "SATURATION":     "HSV_SATURATION",
+        "COLOR":          "HSL_COLOR",
+        "LUMINOSITY":     "HSV_VALUE",
+        "HSV_HUE":        "HSV_HUE",
+        "HSV_SATURATION": "HSV_SATURATION",
+        "HSV_VALUE":      "HSV_VALUE",
+        "HSL_COLOR":      "HSL_COLOR",
+        "LCH_HUE":        "LCH_HUE",
+        "LCH_CHROMA":     "LCH_CHROMA",
+        "LCH_COLOR":      "LCH_COLOR",
+        "LCH_LIGHTNESS":  "LCH_LIGHTNESS",
+    }
+
     def _blend_mode_from_string(self, mode_str):
-        """Map blend mode name string to Gimp.LayerMode."""
-        MODE_MAP = {
-            "NORMAL":      Gimp.LayerMode.NORMAL,
-            "MULTIPLY":    Gimp.LayerMode.MULTIPLY,
-            "SCREEN":      Gimp.LayerMode.SCREEN,
-            "OVERLAY":     Gimp.LayerMode.OVERLAY,
-            "DARKEN":      Gimp.LayerMode.DARKEN_ONLY,
-            "LIGHTEN":     Gimp.LayerMode.LIGHTEN_ONLY,
-            "DODGE":       Gimp.LayerMode.DODGE,
-            "BURN":        Gimp.LayerMode.BURN,
-            "HARD_LIGHT":  Gimp.LayerMode.HARDLIGHT,
-            "SOFT_LIGHT":  Gimp.LayerMode.SOFTLIGHT,
-            "DIFFERENCE":  Gimp.LayerMode.DIFFERENCE,
-            "HUE":         Gimp.LayerMode.HSV_HUE,
-            "SATURATION":  Gimp.LayerMode.HSV_SATURATION,
-            "COLOR":       Gimp.LayerMode.HSL_COLOR,
-            "LUMINOSITY":  Gimp.LayerMode.HSV_VALUE,
-            "DISSOLVE":    Gimp.LayerMode.DISSOLVE,
-        }
-        return MODE_MAP.get(mode_str.upper(), Gimp.LayerMode.NORMAL)
+        """Resolve a blend-mode string to a Gimp.LayerMode value."""
+        if not mode_str:
+            return Gimp.LayerMode.NORMAL
+        enum_name = self._BLEND_MODE_ENUM_MAP.get(mode_str.upper())
+        if enum_name is None:
+            return Gimp.LayerMode.NORMAL
+        return getattr(Gimp.LayerMode, enum_name, Gimp.LayerMode.NORMAL)
 
     def _create_layer(self, params):
         """Create and insert a new layer."""
