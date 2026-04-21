@@ -550,19 +550,21 @@ drawable.merge_filter(f)
 
 Prefer the new `apply_filter` tool (takes `operation` + `properties` dict) instead of calling this by hand, and use `list_gegl_operations` to discover op names.
 
-### Protocol quirk — `pyGObject-console` list semantics
+### Protocol quirk — `pyGObject-console` list semantics (auto-healed in 3.2)
 
-When calling `call_api("exec", ["pyGObject-console", [lines…]])`, **each element of the list is exec'd as an independent top-level statement**. Multi-line blocks (`def`, `for`, `if`) split across list entries raise `SyntaxError: expected an indented block`.
+Historically, calling `call_api("exec", ["pyGObject-console", [lines…]])` exec'd **each element of the list as an independent top-level statement**, so multi-line blocks (`def`, `for`, `if`) split across list entries raised `SyntaxError: expected an indented block`.
+
+Starting with this plugin version, the dispatcher **auto-joins indented-continuation lines** back into their leading block before exec — any entry whose first character is whitespace is appended to the previous entry with a newline. Both of these now work:
 
 ```python
-# ✗ BROKEN — each line is exec'd on its own
-["def foo():", "    return 1"]
-
-# ✓ WORKS — one multi-line string
+# ✓ Still works — single multi-line string
 ["def foo():\n    return 1\n"]
+
+# ✓ Now also works — auto-joined by the dispatcher
+["def foo():", "    return 1"]
 ```
 
-Since the exec context is persistent across calls, you can also split the definition and the call into two separate list entries as long as each entry is self-contained.
+Entries that don't start with whitespace remain independent exec calls, so per-entry output ordering is preserved for scripts that already work. Callers that need strict per-line semantics can opt out by passing `params.no_auto_join = True`.
 
 ### New endpoints exposed for 3.2 ergonomics
 

@@ -246,6 +246,31 @@ class MCPPlugin(Gimp.PlugIn):
             client.close()
         return
 
+    def _normalize_exec_lines(self, lines):
+        """Collapse indented-continuation lines back into their leading block.
+
+        Lines whose first character is whitespace are appended to the previous
+        entry with a newline joiner, so that
+            ["def foo():", "    return 1"]
+        becomes
+            ["def foo():\\n    return 1"]
+        and exec's as a single top-level statement. Lines that don't start
+        with whitespace are left as their own entries, preserving the
+        per-entry output ordering for scripts that already work.
+        """
+        if not isinstance(lines, list):
+            return lines
+        out = []
+        for line in lines:
+            if (isinstance(line, str) and line
+                    and line[0] in (' ', '\t')
+                    and out
+                    and isinstance(out[-1], str)):
+                out[-1] = out[-1] + '\n' + line
+            else:
+                out.append(line)
+        return out
+
     def execute_command(self, request):
         """Execute commands in GIMP's main thread."""
         try:
@@ -467,6 +492,18 @@ class MCPPlugin(Gimp.PlugIn):
                     "status": "error",
                     "error": "No command arguments provided"
                 }
+
+            # Auto-join indented-continuation lines back into their block.
+            # Fixes the long-standing quirk where
+            #   ["def foo():", "    return 1"]
+            # exec'd each entry separately and raised "expected an indented
+            # block". Callers that genuinely want per-line exec can opt out
+            # by passing params.no_auto_join = True.
+            no_auto_join = False
+            if "params" in j and isinstance(j["params"], dict):
+                no_auto_join = bool(j["params"].get("no_auto_join", False))
+            if len(a) > 1 and not no_auto_join:
+                a = [a[0], self._normalize_exec_lines(a[1])]
 
             if a[0] == 'python-fu-eval':
                 if len(a) > 0:
