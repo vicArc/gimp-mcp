@@ -478,6 +478,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._rollback_transaction(j.get("params", {}))
             elif "type" in j and j["type"] == "get_layer_thumbnail":
                 return self._get_layer_thumbnail(j.get("params", {}))
+            elif "type" in j and j["type"] == "batch":
+                return self._batch(j.get("params", {}))
             # ── Category 11: Discovery (3.2 migration helpers) ───────────────
             elif "type" in j and j["type"] == "get_pdb_procedure_info":
                 return self._get_pdb_procedure_info(j.get("params", {}))
@@ -4672,6 +4674,62 @@ class MCPPlugin(Gimp.PlugIn):
                     "alpha":     a,
                 }
             }
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _batch(self, params):
+        """Execute a pipeline of {type, params} tool calls in one round-trip.
+
+        Cuts TCP overhead on long flatting/rendering passes. Each sub-call
+        is dispatched through the same code path as a direct request, so
+        behavior matches single-call mode exactly.
+        """
+        try:
+            operations    = params.get("operations") or []
+            stop_on_error = bool(params.get("stop_on_error", True))
+            if not isinstance(operations, list):
+                return {"status": "error", "error": "batch: 'operations' must be a list"}
+            if "batch" in {op.get("type") for op in operations if isinstance(op, dict)}:
+                return {"status": "error",
+                        "error": "batch: nested batch operations are not supported"}
+
+            results = []
+            for i, op in enumerate(operations):
+                if not isinstance(op, dict) or "type" not in op:
+                    entry = {"status": "error",
+                             "error": f"operation #{i} is missing 'type'",
+                             "op_index": i}
+                    results.append(entry)
+                    if stop_on_error:
+                        break
+                    continue
+
+                sub_request = json.dumps({
+                    "type":   op["type"],
+                    "params": op.get("params") or {},
+                })
+                try:
+                    r = self.execute_command(sub_request)
+                except Exception as e:
+                    r = {"status": "error", "error": str(e),
+                         "traceback": traceback.format_exc()}
+
+                entry = dict(r) if isinstance(r, dict) else {"status": "success", "result": r}
+                entry["op_index"] = i
+                entry["op_type"]  = op["type"]
+                results.append(entry)
+                if stop_on_error and entry.get("status") != "success":
+                    break
+
+            successes = sum(1 for r in results if r.get("status") == "success")
+            return {"status": "success", "results": {
+                "status":    "success",
+                "total":     len(operations),
+                "executed":  len(results),
+                "successes": successes,
+                "failures":  len(results) - successes,
+                "results":   results,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

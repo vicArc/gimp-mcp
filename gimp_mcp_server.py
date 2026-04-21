@@ -3113,6 +3113,40 @@ def get_pixel_color(
 
 
 @mcp.tool()
+def batch(
+    ctx: Context,
+    operations: list,
+    stop_on_error: bool = True,
+) -> dict:
+    """Execute a pipeline of tool calls in one round-trip.
+
+    Each entry in `operations` is {"type": "<tool-name>", "params": {...}}.
+    Sub-calls are dispatched through the same code path as direct requests.
+    Nested batches are rejected.
+
+    Parameters:
+    - operations: List of {type, params} dicts
+    - stop_on_error: If True (default), halt at the first sub-failure;
+      if False, run every op and report per-op status
+
+    Returns: {total, executed, successes, failures,
+              results: [{op_index, op_type, status, ...}, ...]}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("batch", {
+            "operations":    operations,
+            "stop_on_error": stop_on_error,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"batch failed: {e}")
+
+
+@mcp.tool()
 def get_layer_thumbnail(
     ctx: Context,
     layer_name: str | None = None,
