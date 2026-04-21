@@ -1722,6 +1722,37 @@ def reorder_layer(
 
 
 @mcp.tool()
+def remove_layer_mask(
+    ctx: Context,
+    layer_name: str | None = None,
+    action: str = "apply",
+    image_index: int = 0,
+) -> dict:
+    """Apply or discard a layer's mask.
+
+    Parameters:
+    - layer_name: Target layer (defaults to active)
+    - action: "apply" (bake the mask into the layer) or "discard" (drop it)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, action}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("remove_layer_mask", {
+            "layer_name":  layer_name,
+            "action":      action,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"remove_layer_mask failed: {e}")
+
+
+@mcp.tool()
 def add_layer_mask(
     ctx: Context,
     layer_name: str | None = None,

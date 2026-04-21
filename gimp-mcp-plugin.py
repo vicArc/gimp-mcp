@@ -352,6 +352,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._transform_layer(j.get("params", {}))
             elif "type" in j and j["type"] == "add_layer_mask":
                 return self._add_layer_mask(j.get("params", {}))
+            elif "type" in j and j["type"] == "remove_layer_mask":
+                return self._remove_layer_mask(j.get("params", {}))
             elif "type" in j and j["type"] == "flatten_image":
                 return self._flatten_image(j.get("params", {}))
             elif "type" in j and j["type"] == "merge_visible_layers":
@@ -2757,6 +2759,43 @@ class MCPPlugin(Gimp.PlugIn):
         "copy":            "COPY",
         "channel":         "CHANNEL",
     }
+
+    def _remove_layer_mask(self, params):
+        """Apply or discard a layer's mask."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            action      = (params.get("action") or "apply").lower()
+
+            ACTION_MAP = {"apply": "APPLY", "discard": "DISCARD"}
+            enum_name = ACTION_MAP.get(action)
+            if enum_name is None:
+                return {"status": "error",
+                        "error": f"remove_layer_mask: unknown action '{action}'. Valid: apply, discard"}
+            mode = getattr(Gimp.MaskApplyMode, enum_name, None)
+            if mode is None:
+                return {"status": "error",
+                        "error": f"Gimp.MaskApplyMode.{enum_name} not available in this build"}
+
+            image = self._get_image(image_index)
+            layer = self._resolve_layer(image, layer_name, None)
+            if layer.get_mask() is None:
+                return {"status": "error",
+                        "error": f"layer '{layer.get_name()}' has no mask"}
+
+            image.undo_group_start()
+            try:
+                layer.remove_mask(mode)
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":     "success",
+                "layer_name": layer.get_name(),
+                "action":     action,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
     def _add_layer_mask(self, params):
         """Create and attach a layer mask of the requested type."""
