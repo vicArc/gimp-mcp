@@ -5366,6 +5366,22 @@ class MCPPlugin(Gimp.PlugIn):
                 continue
         return None
 
+    def _reorder_layer_filter(self, params):
+        """Change a filter's position in the NDE stack.
+
+        GIMP 3.2 does not expose a reorder API (no Drawable.reorder_filter
+        on the Python binding, no gimp-drawable-reorder-filter PDB proc).
+        The API shape is kept stable so scripts can call this tool across
+        future builds; for now it returns a structured 'not available'
+        error with a remove + reapply workaround suggestion.
+        """
+        _ = params  # params retained for future live implementation
+        return {"status": "error",
+                "error": "reorder_layer_filter: no reorder API is exposed in GIMP 3.2 "
+                         "(Drawable.reorder_filter missing, gimp-drawable-reorder-filter "
+                         "absent). Workaround: remove_layer_filter then "
+                         "apply_filter_nondestructive in the desired order."}
+
     def _toggle_layer_filter(self, params):
         """Show / hide a live filter via filter.set_visible."""
         try:

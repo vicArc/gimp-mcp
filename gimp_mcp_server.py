@@ -3803,6 +3803,36 @@ def text_layer_to_path(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def reorder_layer_filter(
+    ctx: Context,
+    filter_id: int,
+    new_position: int,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Change a filter's position in the NDE stack.
+
+    GIMP 3.2 does not expose a reorder API — returns a structured
+    "not available" error with a remove + reapply workaround suggestion.
+    API shape kept stable for future builds that ship the feature.
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("reorder_layer_filter", {
+            "filter_id":    filter_id,
+            "new_position": new_position,
+            "layer_name":   layer_name,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"reorder_layer_filter failed: {e}")
+
+
+@mcp.tool()
 def toggle_layer_filter(
     ctx: Context,
     filter_id: int,
