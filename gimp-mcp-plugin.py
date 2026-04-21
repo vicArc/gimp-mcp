@@ -348,6 +348,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._set_layer_properties(j.get("params", {}))
             elif "type" in j and j["type"] == "reorder_layer":
                 return self._reorder_layer(j.get("params", {}))
+            elif "type" in j and j["type"] == "transform_layer":
+                return self._transform_layer(j.get("params", {}))
             elif "type" in j and j["type"] == "flatten_image":
                 return self._flatten_image(j.get("params", {}))
             elif "type" in j and j["type"] == "merge_visible_layers":
@@ -2740,6 +2742,55 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _transform_layer(self, params):
+        """Scale and/or translate a single layer (distinct from scale_image).
+
+        Scale pair (scale_width + scale_height) and offset pair (offset_x +
+        offset_y) are independent — pass only the pair you want applied.
+        """
+        try:
+            image_index  = int(params.get("image_index", 0))
+            layer_name   = params.get("layer_name", None)
+            scale_w      = params.get("scale_width")
+            scale_h      = params.get("scale_height")
+            offset_x     = params.get("offset_x")
+            offset_y     = params.get("offset_y")
+            local_origin = bool(params.get("local_origin", True))
+
+            image = self._get_image(image_index)
+            layer = self._resolve_layer(image, layer_name, None)
+
+            image.undo_group_start()
+            try:
+                if scale_w is not None and scale_h is not None:
+                    layer.scale(int(scale_w), int(scale_h), local_origin)
+                if offset_x is not None or offset_y is not None:
+                    dx = int(offset_x) if offset_x is not None else 0
+                    dy = int(offset_y) if offset_y is not None else 0
+                    layer.translate(dx, dy)
+            finally:
+                image.undo_group_end()
+
+            Gimp.displays_flush()
+            result = {
+                "status":     "success",
+                "layer_name": layer.get_name(),
+                "width":      layer.get_width(),
+                "height":     layer.get_height(),
+            }
+            try:
+                offs = layer.get_offsets()
+                # get_offsets returns (ok, x, y) in some bindings, (x, y) in others
+                if isinstance(offs, tuple) and len(offs) == 3:
+                    result["offset_x"], result["offset_y"] = int(offs[1]), int(offs[2])
+                elif isinstance(offs, tuple) and len(offs) == 2:
+                    result["offset_x"], result["offset_y"] = int(offs[0]), int(offs[1])
+            except Exception:
+                pass
+            return {"status": "success", "results": result}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

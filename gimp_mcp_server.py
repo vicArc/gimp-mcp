@@ -1722,6 +1722,51 @@ def reorder_layer(
 
 
 @mcp.tool()
+def transform_layer(
+    ctx: Context,
+    layer_name: str | None = None,
+    scale_width: int | None = None,
+    scale_height: int | None = None,
+    offset_x: int | None = None,
+    offset_y: int | None = None,
+    local_origin: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Scale and/or translate a single layer (layer-local — does not touch canvas).
+
+    Pass (scale_width + scale_height) together to scale; pass offset_x /
+    offset_y to translate. Either pair can be omitted to skip that step.
+
+    Parameters:
+    - layer_name: Target layer (defaults to active)
+    - scale_width / scale_height: New layer dimensions (both required to scale)
+    - offset_x / offset_y: Translation delta (both optional)
+    - local_origin: True keeps the layer centered on its current center,
+      False keeps the top-left anchor fixed
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, width, height, offset_x, offset_y}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("transform_layer", {
+            "layer_name":   layer_name,
+            "scale_width":  scale_width,
+            "scale_height": scale_height,
+            "offset_x":     offset_x,
+            "offset_y":     offset_y,
+            "local_origin": local_origin,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"transform_layer failed: {e}")
+
+
+@mcp.tool()
 def flatten_image(ctx: Context, image_index: int = 0) -> dict:
     """Flatten all layers into a single background layer.
 
