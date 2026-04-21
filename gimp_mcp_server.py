@@ -732,6 +732,48 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def get_dominant_colors(
+    ctx: Context,
+    k: int = 5,
+    ignore_alpha: bool = True,
+    sample_size: int = 48,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Extract top-k dominant colors via downsample + bucket-count.
+
+    Downsamples a duplicate of the target to sample_size on the long
+    edge, bins each pixel into a 32-step RGB bucket, and returns the
+    top-k buckets by population. Fast approximation — cheap enough to
+    call per-layer for style-matching agent loops.
+
+    Parameters:
+    - k: Number of dominant colors to return (default 5)
+    - ignore_alpha: Skip pixels whose alpha < 10/255 (default True)
+    - sample_size: Long-edge size of the working downsample (default 48)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, k, sample_size, colors: [{hex, rgb, count}, ...]}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_dominant_colors", {
+            "k":            k,
+            "ignore_alpha": ignore_alpha,
+            "sample_size":  sample_size,
+            "layer_name":   layer_name,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_dominant_colors failed: {e}")
+
+
+@mcp.tool()
 def get_average_color(
     ctx: Context,
     x: int = 0,

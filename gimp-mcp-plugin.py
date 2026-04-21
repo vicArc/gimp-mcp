@@ -362,6 +362,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._swap_colors(j.get("params", {}))
             elif "type" in j and j["type"] == "get_average_color":
                 return self._get_average_color(j.get("params", {}))
+            elif "type" in j and j["type"] == "get_dominant_colors":
+                return self._get_dominant_colors(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2095,6 +2097,80 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _get_dominant_colors(self, params):
+        """Extract top-k dominant colors from a layer via downsample + bucket-count.
+
+        Downscales a transient copy of the layer to `sample_size` on the
+        long edge, iterates the scaled pixels once, bins each pixel into
+        a 32-step RGB bucket, and returns the top-k buckets by population.
+        A fast approximation — not true k-means but deterministic and
+        cheap enough to call per-layer in agent loops.
+        """
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            k           = int(params.get("k", 5))
+            ignore_alpha = bool(params.get("ignore_alpha", True))
+            sample_size = int(params.get("sample_size", 48))
+
+            image    = self._get_image(image_index)
+            src_layer = self._resolve_layer(image, layer_name, None)
+            # Duplicate into a temp image so the scale is non-destructive.
+            tmp_image = image.duplicate()
+            try:
+                # Flatten so the duplicate has a single drawable to sample.
+                tmp_image.flatten()
+                # Scale to sample_size on the long edge.
+                iw, ih = tmp_image.get_width(), tmp_image.get_height()
+                long_edge = max(iw, ih)
+                if long_edge > sample_size:
+                    scale = sample_size / long_edge
+                    tmp_image.scale(max(1, int(iw * scale)), max(1, int(ih * scale)))
+                sampled = tmp_image.get_layers()[0]
+                w, h = sampled.get_width(), sampled.get_height()
+                buckets = {}
+                for yy in range(h):
+                    for xx in range(w):
+                        try:
+                            res = sampled.get_pixel(xx, yy)
+                        except Exception:
+                            continue
+                        # get_pixel returns (num_channels, [values])
+                        if isinstance(res, tuple) and len(res) >= 2:
+                            chans = res[1] or []
+                        else:
+                            chans = list(res or [])
+                        if len(chans) < 3:
+                            continue
+                        if ignore_alpha and len(chans) >= 4 and chans[3] < 10:
+                            continue
+                        key = (int(chans[0]) // 32, int(chans[1]) // 32, int(chans[2]) // 32)
+                        buckets[key] = buckets.get(key, 0) + 1
+            finally:
+                try: tmp_image.delete()
+                except Exception: pass
+
+            top = sorted(buckets.items(), key=lambda kv: kv[1], reverse=True)[:k]
+            def _hex(r, g, b):
+                return "#{:02x}{:02x}{:02x}".format(
+                    min(255, r * 32 + 16),
+                    min(255, g * 32 + 16),
+                    min(255, b * 32 + 16))
+            colors = [{
+                "hex":   _hex(key[0], key[1], key[2]),
+                "rgb":   [key[0] * 32 + 16, key[1] * 32 + 16, key[2] * 32 + 16],
+                "count": count,
+            } for key, count in top]
+            return {"status": "success", "results": {
+                "status": "success",
+                "layer_name":  src_layer.get_name(),
+                "k":           len(colors),
+                "sample_size": sample_size,
+                "colors":      colors,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
