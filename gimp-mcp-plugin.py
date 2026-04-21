@@ -356,6 +356,10 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._apply_seamless_tile(j.get("params", {}))
             elif "type" in j and j["type"] == "set_foreground":
                 return self._set_foreground(j.get("params", {}))
+            elif "type" in j and j["type"] == "set_background":
+                return self._set_background(j.get("params", {}))
+            elif "type" in j and j["type"] == "swap_colors":
+                return self._swap_colors(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2088,6 +2092,28 @@ class MCPPlugin(Gimp.PlugIn):
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
+            return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _set_background(self, params):
+        """Set the paint-context background color."""
+        try:
+            from gi.repository import Gegl
+            color_str = params.get("color", "")
+            if not color_str:
+                return {"status": "error", "error": "set_background: 'color' is required"}
+            Gimp.context_set_background(Gegl.Color.new(color_str))
+            return {"status": "success", "results": {
+                "status": "success", "color": color_str,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _swap_colors(self, _params):
+        """Swap the paint-context foreground and background colors."""
+        try:
+            Gimp.context_swap_colors()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
