@@ -360,6 +360,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._set_background(j.get("params", {}))
             elif "type" in j and j["type"] == "swap_colors":
                 return self._swap_colors(j.get("params", {}))
+            elif "type" in j and j["type"] == "get_average_color":
+                return self._get_average_color(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2093,6 +2095,61 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _get_average_color(self, params):
+        """Sample mean RGBA in a rectangular region of a layer.
+
+        Uses gimp-drawable-histogram per channel to avoid pixel-by-pixel
+        iteration. Region coordinates are layer-local.
+        """
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            x           = int(params.get("x", 0))
+            y           = int(params.get("y", 0))
+            width       = int(params.get("width", 0))
+            height      = int(params.get("height", 0))
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            if width <= 0 or height <= 0:
+                width, height = drawable.get_width() - x, drawable.get_height() - y
+            # Make a selection over the region, measure histogram means, restore.
+            Gimp.Selection.none(image)
+            image.select_rectangle(Gimp.ChannelOps.REPLACE, x, y, width, height)
+
+            pdb  = Gimp.get_pdb()
+            proc = pdb.lookup_procedure("gimp-drawable-histogram")
+            def _mean(channel_enum):
+                if proc is None:
+                    return 0.0
+                cfg = proc.create_config()
+                cfg.set_property("drawable",    drawable)
+                cfg.set_property("channel",     channel_enum)
+                cfg.set_property("start-range", 0.0)
+                cfg.set_property("end-range",   1.0)
+                res = proc.run(cfg)
+                try: return float(res.index(0))
+                except Exception: return 0.0
+
+            r = _mean(Gimp.HistogramChannel.RED)
+            g = _mean(Gimp.HistogramChannel.GREEN)
+            b = _mean(Gimp.HistogramChannel.BLUE)
+            try:    a = _mean(Gimp.HistogramChannel.ALPHA)
+            except Exception: a = 1.0
+            Gimp.Selection.none(image)
+            Gimp.displays_flush()
+
+            def _u8(v): return max(0, min(255, int(v * 255)))
+            hex_color = "#{:02x}{:02x}{:02x}".format(_u8(r), _u8(g), _u8(b))
+            return {"status": "success", "results": {
+                "status": "success",
+                "layer_name":  drawable.get_name(),
+                "region":      {"x": x, "y": y, "width": width, "height": height},
+                "rgba":        [r, g, b, a],
+                "hex":         hex_color,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

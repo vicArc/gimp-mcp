@@ -732,6 +732,46 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def get_average_color(
+    ctx: Context,
+    x: int = 0,
+    y: int = 0,
+    width: int = 0,
+    height: int = 0,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Sample mean RGBA in a rectangular region of a layer.
+
+    Omit / pass 0 for width + height to sample from (x, y) to the layer's
+    bottom-right corner. Coordinates are layer-local.
+
+    Parameters:
+    - x, y, width, height: Region bounds in layer coordinates
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, region, rgba: [r,g,b,a], hex}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_average_color", {
+            "x":           x,
+            "y":           y,
+            "width":       width,
+            "height":      height,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_average_color failed: {e}")
+
+
+@mcp.tool()
 def set_background(ctx: Context, color: str) -> dict:
     """Set the paint-context background color.
 
