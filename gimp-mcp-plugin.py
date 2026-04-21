@@ -336,6 +336,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._apply_motion_blur(j.get("params", {}))
             elif "type" in j and j["type"] == "apply_lens_blur":
                 return self._apply_lens_blur(j.get("params", {}))
+            elif "type" in j and j["type"] == "apply_bokeh":
+                return self._apply_bokeh(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2071,6 +2073,21 @@ class MCPPlugin(Gimp.PlugIn):
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _apply_bokeh(self, params):
+        """Shaped bokeh blur.
+
+        GIMP 3.2 does not ship a dedicated gegl:bokeh op in the core GEGL
+        build. The API shape is retained so callers can target this tool
+        across builds; in the current build it returns a structured
+        'not available' error with a pointer to apply_lens_blur as the
+        closest built-in alternative.
+        """
+        _ = params
+        return {"status": "error",
+                "error": "apply_bokeh: gegl:bokeh is not available in this GIMP 3.2 "
+                         "build. Use apply_lens_blur for a radial/photographic "
+                         "out-of-focus effect."}
 
     def _apply_lens_blur(self, params):
         """Apply gegl:lens-blur."""
