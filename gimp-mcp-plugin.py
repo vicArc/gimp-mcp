@@ -512,6 +512,21 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._add_text_on_path(j.get("params", {}))
             elif "type" in j and j["type"] == "text_layer_to_path":
                 return self._text_layer_to_path(j.get("params", {}))
+            # ── Category 14: Non-Destructive Filters ──────────────────────────
+            elif "type" in j and j["type"] == "apply_filter_nondestructive":
+                return self._apply_filter_nondestructive(j.get("params", {}))
+            elif "type" in j and j["type"] == "list_layer_filters":
+                return self._list_layer_filters(j.get("params", {}))
+            elif "type" in j and j["type"] == "update_layer_filter":
+                return self._update_layer_filter(j.get("params", {}))
+            elif "type" in j and j["type"] == "remove_layer_filter":
+                return self._remove_layer_filter(j.get("params", {}))
+            elif "type" in j and j["type"] == "toggle_layer_filter":
+                return self._toggle_layer_filter(j.get("params", {}))
+            elif "type" in j and j["type"] == "reorder_layer_filter":
+                return self._reorder_layer_filter(j.get("params", {}))
+            elif "type" in j and j["type"] == "merge_layer_filter":
+                return self._merge_layer_filter(j.get("params", {}))
             # ── Category 13: Channels & Masks ─────────────────────────────────
             elif "type" in j and j["type"] == "list_channels":
                 return self._list_channels(j.get("params", {}))
@@ -5330,6 +5345,76 @@ class MCPPlugin(Gimp.PlugIn):
                          "procedure (Layer → Text along path is UI-only). Workaround: "
                          "use add_text to lay the text, then text_layer_to_path + "
                          "path_stroke for a curve-aligned outline."}
+
+    # =========================================================================
+    # CATEGORY 14 — Non-Destructive Filters
+    # =========================================================================
+
+    def _resolve_filter(self, drawable, filter_id):
+        """Look up a DrawableFilter on a drawable by id. Returns None if not found."""
+        if filter_id is None:
+            return None
+        try:
+            filter_id = int(filter_id)
+        except (TypeError, ValueError):
+            return None
+        for f in (drawable.get_filters() or []):
+            try:
+                if f.get_id() == filter_id:
+                    return f
+            except Exception:
+                continue
+        return None
+
+    def _apply_filter_nondestructive(self, params):
+        """Apply a GEGL op to a drawable without merging — keep it as a live filter.
+
+        Mirrors apply_filter's parameter shape but calls append_filter instead
+        of merge_filter, so the filter stays editable via update_layer_filter
+        / toggle_layer_filter and can later be promoted via merge_layer_filter.
+        """
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            op_name     = params.get("operation") or params.get("op_name") or ""
+            props       = params.get("properties") or params.get("props") or {}
+            name        = params.get("name") or op_name
+
+            if not op_name:
+                return {"status": "error",
+                        "error": "apply_filter_nondestructive: 'operation' is required"}
+            if not isinstance(props, dict):
+                return {"status": "error",
+                        "error": "apply_filter_nondestructive: 'properties' must be a dict"}
+
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+
+            image.undo_group_start()
+            try:
+                filter_obj = Gimp.DrawableFilter.new(drawable, op_name, name)
+                if filter_obj is None:
+                    return {"status": "error",
+                            "error": f"DrawableFilter.new returned None for '{op_name}'"}
+                config = filter_obj.get_config()
+                if config is not None:
+                    for k, v in props.items():
+                        try: config.set_property(k, v)
+                        except Exception: pass
+                drawable.append_filter(filter_obj)
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":        "success",
+                "filter_id":     filter_obj.get_id(),
+                "filter_name":   filter_obj.get_name(),
+                "operation":     op_name,
+                "layer_name":    drawable.get_name(),
+                "props_applied": list(props.keys()),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
     def _text_layer_to_path(self, params):
         """Convert a text layer's glyphs to a path via Gimp.Path.new_from_text_layer."""

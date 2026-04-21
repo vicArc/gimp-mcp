@@ -3799,6 +3799,51 @@ def text_layer_to_path(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY 14 — Non-Destructive Filters
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def apply_filter_nondestructive(
+    ctx: Context,
+    operation: str,
+    properties: dict | None = None,
+    name: str | None = None,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Apply a GEGL operation as a live (non-destructive) filter on a layer.
+
+    Unlike apply_filter which merges the result immediately, this stacks
+    the filter onto the layer where it stays editable via update_layer_filter,
+    toggle_layer_filter, or merge_layer_filter.
+
+    Parameters:
+    - operation: GEGL op name, e.g. "gegl:gaussian-blur"
+    - properties: Dict of op properties
+    - name: Friendly filter name (defaults to the operation name)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {filter_id, filter_name, operation, layer_name, props_applied}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_filter_nondestructive", {
+            "operation":   operation,
+            "properties":  properties or {},
+            "name":        name,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_filter_nondestructive failed: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CATEGORY 13 — Channels & Masks
 # ─────────────────────────────────────────────────────────────────────────────
 
