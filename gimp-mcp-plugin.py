@@ -430,6 +430,9 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._get_pdb_procedure_info(j.get("params", {}))
             elif "type" in j and j["type"] == "list_gegl_operations":
                 return self._list_gegl_operations(j.get("params", {}))
+            # ── Category 12: Paths ────────────────────────────────────────────
+            elif "type" in j and j["type"] == "path_create":
+                return self._path_create(j.get("params", {}))
             elif "cmds" in j:
                 a = ['python-fu-exec', j["cmds"]]
             else:
@@ -4310,6 +4313,84 @@ class MCPPlugin(Gimp.PlugIn):
                     "contains":   contains,
                 }
             }
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    # =========================================================================
+    # CATEGORY 12 — Paths
+    # =========================================================================
+
+    def _path_create(self, params):
+        """Create a bezier path and insert it into the image.
+
+        Each entry in `points` is {"anchor":[x,y], "h1":[cx,cy], "h2":[cx,cy]}.
+        The first point's anchor starts the stroke; subsequent points are
+        reached via cubic-to using the previous point's h2 and the current
+        point's h1. h1/h2 default to the anchor (degenerate cubic = straight
+        line) when omitted.
+        """
+        try:
+            image_index = int(params.get("image_index", 0))
+            name        = params.get("name") or "Path"
+            points      = params.get("points") or []
+            close       = bool(params.get("close", True))
+
+            if not isinstance(points, list) or not points:
+                return {"status": "error",
+                        "error": "path_create: 'points' must be a non-empty list"}
+
+            def _xy(val, fallback):
+                if isinstance(val, (list, tuple)) and len(val) >= 2:
+                    return float(val[0]), float(val[1])
+                return fallback
+
+            image = self._get_image(image_index)
+            path  = Gimp.Path.new(image, name)
+            image.insert_path(path, None, -1)
+
+            first = points[0]
+            if not isinstance(first, dict):
+                return {"status": "error",
+                        "error": "path_create: each point must be an object with 'anchor'"}
+            anchor0 = _xy(first.get("anchor"), None)
+            if anchor0 is None:
+                return {"status": "error",
+                        "error": "path_create: first point missing 'anchor': [x,y]"}
+
+            stroke_id = path.bezier_stroke_new_moveto(anchor0[0], anchor0[1])
+
+            prev = first
+            for cur in points[1:]:
+                if not isinstance(cur, dict):
+                    continue
+                cur_anchor = _xy(cur.get("anchor"), None)
+                if cur_anchor is None:
+                    continue
+                prev_anchor = _xy(prev.get("anchor"), None) or cur_anchor
+                prev_h2 = _xy(prev.get("h2"), prev_anchor)
+                cur_h1  = _xy(cur.get("h1"),  cur_anchor)
+                path.bezier_stroke_cubicto(
+                    stroke_id,
+                    prev_h2[0], prev_h2[1],
+                    cur_h1[0],  cur_h1[1],
+                    cur_anchor[0], cur_anchor[1],
+                )
+                prev = cur
+
+            if close:
+                try:
+                    path.stroke_close(stroke_id)
+                except Exception:
+                    pass
+
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":     "success",
+                "path_name":  path.get_name(),
+                "path_id":    path.get_id(),
+                "num_points": len(points),
+                "closed":     close,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

@@ -2921,6 +2921,49 @@ def list_gegl_operations(
         raise Exception(f"list_gegl_operations failed: {e}")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY 12 — Paths
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def path_create(
+    ctx: Context,
+    name: str,
+    points: list,
+    close: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Create a bezier path and insert it into an image.
+
+    Each entry in `points` is {"anchor": [x, y], "h1": [cx, cy], "h2": [cx, cy]}.
+    The first point's anchor opens the stroke; each subsequent point is
+    reached via a cubic-to using the previous point's h2 and the current
+    point's h1. Omit h1/h2 to default to the anchor (straight-line segment).
+
+    Parameters:
+    - name: Path name
+    - points: List of {anchor, h1, h2} dicts
+    - close: Close the stroke after the last point (default True)
+    - image_index: Target image index (default 0)
+
+    Returns: {path_name, path_id, num_points, closed}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("path_create", {
+            "name":        name,
+            "points":      points,
+            "close":       close,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"path_create failed: {e}")
+
+
 def main():
     mcp.run()
 
