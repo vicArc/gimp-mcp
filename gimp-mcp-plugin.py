@@ -5363,6 +5363,26 @@ class MCPPlugin(Gimp.PlugIn):
             pass
         return None
 
+    def _delete_channel(self, params):
+        """Remove a named channel via image.remove_channel."""
+        try:
+            image_index  = int(params.get("image_index", 0))
+            channel_name = params.get("channel_name") or ""
+            if not channel_name:
+                return {"status": "error", "error": "delete_channel: 'channel_name' is required"}
+            image = self._get_image(image_index)
+            channel = self._resolve_channel(image, channel_name)
+            if channel is None:
+                return {"status": "error", "error": f"channel not found: {channel_name}"}
+            image.remove_channel(channel)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":       "success",
+                "channel_name": channel_name,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     def _duplicate_channel(self, params):
         """Duplicate a channel via channel.copy + image.insert_channel."""
         try:

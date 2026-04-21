@@ -3568,6 +3568,34 @@ def path_create(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def delete_channel(
+    ctx: Context,
+    channel_name: str,
+    image_index: int = 0,
+) -> dict:
+    """Delete a named channel from an image.
+
+    Parameters:
+    - channel_name: Channel to remove
+    - image_index: Target image index (default 0)
+
+    Returns: {channel_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("delete_channel", {
+            "channel_name": channel_name,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"delete_channel failed: {e}")
+
+
+@mcp.tool()
 def duplicate_channel(
     ctx: Context,
     channel_name: str,
