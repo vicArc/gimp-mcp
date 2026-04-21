@@ -276,6 +276,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._save_xcf(j.get("params", {}))
             elif "type" in j and j["type"] == "duplicate_image":
                 return self._duplicate_image(j.get("params", {}))
+            elif "type" in j and j["type"] == "load_image_as_layer":
+                return self._load_image_as_layer(j.get("params", {}))
             elif "type" in j and j["type"] == "export_image":
                 return self._export_image(j.get("params", {}))
             elif "type" in j and j["type"] == "batch_export":
@@ -1713,6 +1715,60 @@ class MCPPlugin(Gimp.PlugIn):
                     "display_opened": display is not None,
                 }
             }
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _load_image_as_layer(self, params):
+        """Import an external image as a new layer in an existing image.
+
+        Uses Gimp.file_load_layer. When fit_canvas is True, the imported
+        layer is scaled to fit the target image (preserving aspect ratio)
+        and centered.
+        """
+        try:
+            from gi.repository import Gio
+            image_index = int(params.get("image_index", 0))
+            file_path   = params.get("file_path", "")
+            layer_name  = params.get("layer_name")
+            fit_canvas  = bool(params.get("fit_canvas", True))
+
+            if not file_path:
+                return {"status": "error", "error": "load_image_as_layer: 'file_path' is required"}
+            if not os.path.exists(file_path):
+                return {"status": "error", "error": f"file not found: {file_path}"}
+
+            image    = self._get_image(image_index)
+            gio_file = Gio.File.new_for_path(file_path)
+            new_layer = Gimp.file_load_layer(Gimp.RunMode.NONINTERACTIVE, image, gio_file)
+            if new_layer is None:
+                return {"status": "error", "error": f"could not load as layer: {file_path}"}
+
+            image.undo_group_start()
+            try:
+                if layer_name:
+                    try: new_layer.set_name(layer_name)
+                    except Exception: pass
+                image.insert_layer(new_layer, None, -1)
+
+                if fit_canvas:
+                    img_w, img_h = image.get_width(), image.get_height()
+                    lyr_w, lyr_h = new_layer.get_width(), new_layer.get_height()
+                    if lyr_w > 0 and lyr_h > 0 and (lyr_w != img_w or lyr_h != img_h):
+                        scale = min(img_w / lyr_w, img_h / lyr_h)
+                        new_w = max(1, int(lyr_w * scale))
+                        new_h = max(1, int(lyr_h * scale))
+                        new_layer.scale(new_w, new_h, False)
+                        new_layer.translate((img_w - new_w) // 2, (img_h - new_h) // 2)
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":     "success",
+                "layer_id":   new_layer.get_id(),
+                "layer_name": new_layer.get_name(),
+                "width":      new_layer.get_width(),
+                "height":     new_layer.get_height(),
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

@@ -566,6 +566,41 @@ def save_xcf(ctx: Context, file_path: str, image_index: int = 0) -> dict:
 
 
 @mcp.tool()
+def load_image_as_layer(
+    ctx: Context,
+    file_path: str,
+    layer_name: str | None = None,
+    fit_canvas: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Import an external image as a new layer in an existing image.
+
+    Parameters:
+    - file_path: Absolute path of the image to import
+    - layer_name: Override the imported layer's name (defaults to filename)
+    - fit_canvas: Scale the imported layer to fit the target canvas
+      (preserving aspect) and center it (default True)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_id, layer_name, width, height}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("load_image_as_layer", {
+            "file_path":   file_path,
+            "layer_name":  layer_name,
+            "fit_canvas":  fit_canvas,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"load_image_as_layer failed: {e}")
+
+
+@mcp.tool()
 def duplicate_image(ctx: Context, image_index: int = 0) -> dict:
     """Duplicate an image (layers + metadata) and open it in a new display.
 
