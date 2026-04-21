@@ -350,6 +350,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._apply_oilify(j.get("params", {}))
             elif "type" in j and j["type"] == "apply_cartoon":
                 return self._apply_cartoon(j.get("params", {}))
+            elif "type" in j and j["type"] == "apply_waterpixels":
+                return self._apply_waterpixels(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2083,6 +2085,31 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _apply_waterpixels(self, params):
+        """Apply gegl:waterpixels — superpixel segmentation into flat regions."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            size        = int(params.get("size", 16))
+            smoothness  = float(params.get("smoothness", 1.0))
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            image.undo_group_start()
+            try:
+                self._apply_gegl_filter(image, drawable, "gegl:waterpixels", {
+                    "size":       size,
+                    "smoothness": smoothness,
+                })
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "layer_name": drawable.get_name(),
+                "size": size, "smoothness": smoothness,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

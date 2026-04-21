@@ -732,6 +732,40 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def apply_waterpixels(
+    ctx: Context,
+    size: int = 16,
+    smoothness: float = 1.0,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Superpixel flat-region segmentation via gegl:waterpixels.
+
+    Parameters:
+    - size: Target superpixel size in pixels (default 16)
+    - smoothness: Edge-smoothing factor (default 1.0)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, size, smoothness}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_waterpixels", {
+            "size":        size,
+            "smoothness":  smoothness,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_waterpixels failed: {e}")
+
+
+@mcp.tool()
 def apply_cartoon(
     ctx: Context,
     mask_radius: float = 7,
