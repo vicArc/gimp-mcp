@@ -344,6 +344,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._apply_color_to_alpha(j.get("params", {}))
             elif "type" in j and j["type"] == "apply_bump_map":
                 return self._apply_bump_map(j.get("params", {}))
+            elif "type" in j and j["type"] == "apply_displacement":
+                return self._apply_displacement(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2077,6 +2079,56 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _apply_displacement(self, params):
+        """Apply gegl:displace using named layers as x/y displacement maps."""
+        try:
+            image_index     = int(params.get("image_index", 0))
+            layer_name      = params.get("layer_name", None)
+            x_map_layer     = params.get("x_map_layer") or ""
+            y_map_layer     = params.get("y_map_layer") or x_map_layer
+            amount          = float(params.get("amount", 10.0))
+            edge_behavior   = (params.get("edge_behavior") or "wrap").lower()
+
+            ABYSS_MAP = {
+                "wrap":  "loop",
+                "smear": "clamp",
+                "none":  "none",
+                "black": "black",
+                "white": "white",
+            }
+            abyss = ABYSS_MAP.get(edge_behavior, "loop")
+
+            if not x_map_layer:
+                return {"status": "error",
+                        "error": "apply_displacement: 'x_map_layer' is required"}
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            x_map    = self._resolve_layer(image, x_map_layer, None)
+            y_map    = self._resolve_layer(image, y_map_layer, None)
+            image.undo_group_start()
+            try:
+                self._apply_gegl_filter(image, drawable, "gegl:displace", {
+                    "displace-mode": "cartesian",
+                    "amount-x":      amount,
+                    "amount-y":      amount,
+                    "abyss-policy":  abyss,
+                    "aux":           x_map,
+                    "aux2":          y_map,
+                })
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success",
+                "layer_name":    drawable.get_name(),
+                "x_map_layer":   x_map.get_name(),
+                "y_map_layer":   y_map.get_name(),
+                "amount":        amount,
+                "edge_behavior": edge_behavior,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
