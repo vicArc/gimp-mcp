@@ -318,6 +318,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._adjust_curves(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_threshold":
                 return self._adjust_threshold(j.get("params", {}))
+            elif "type" in j and j["type"] == "posterize":
+                return self._posterize(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2051,6 +2053,33 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _posterize(self, params):
+        """Apply gimp-drawable-posterize with a given level count."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            levels      = int(params.get("levels", 4))
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            image.undo_group_start()
+            try:
+                pdb  = Gimp.get_pdb()
+                proc = pdb.lookup_procedure("gimp-drawable-posterize")
+                if proc is None:
+                    return {"status": "error", "error": "gimp-drawable-posterize not available"}
+                cfg = proc.create_config()
+                cfg.set_property("drawable", drawable)
+                cfg.set_property("levels",   levels)
+                proc.run(cfg)
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "layer_name": drawable.get_name(), "levels": levels,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
