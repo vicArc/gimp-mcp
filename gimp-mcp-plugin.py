@@ -5363,6 +5363,28 @@ class MCPPlugin(Gimp.PlugIn):
             pass
         return None
 
+    def _layer_mask_to_selection(self, params):
+        """Load a layer's mask into the selection via image.select_item."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            operation   = (params.get("operation") or "replace").lower()
+            image = self._get_image(image_index)
+            layer = self._resolve_layer(image, layer_name, None)
+            mask  = layer.get_mask()
+            if mask is None:
+                return {"status": "error", "error": f"layer '{layer.get_name()}' has no mask"}
+            op = self._channel_ops_from_string(operation)
+            image.select_item(op, mask)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":     "success",
+                "layer_name": layer.get_name(),
+                "operation":  operation,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     def _quick_mask_toggle(self, params):
         """Enter / exit quick-mask paint mode.
 

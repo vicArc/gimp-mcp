@@ -3568,6 +3568,40 @@ def path_create(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def layer_mask_to_selection(
+    ctx: Context,
+    layer_name: str | None = None,
+    operation: str = "replace",
+    image_index: int = 0,
+) -> dict:
+    """Load a layer's mask into the selection.
+
+    Wraps image.select_item on layer.get_mask. Useful for building a new
+    selection from an existing mask without discarding the mask.
+
+    Parameters:
+    - layer_name: Source layer (defaults to active); must have a mask
+    - operation: "replace" (default), "add", "subtract", "intersect"
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, operation}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("layer_mask_to_selection", {
+            "layer_name":  layer_name,
+            "operation":   operation,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"layer_mask_to_selection failed: {e}")
+
+
+@mcp.tool()
 def quick_mask_toggle(
     ctx: Context,
     state: bool | None = None,
