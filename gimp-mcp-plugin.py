@@ -316,6 +316,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._adjust_levels(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_curves":
                 return self._adjust_curves(j.get("params", {}))
+            elif "type" in j and j["type"] == "adjust_threshold":
+                return self._adjust_threshold(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2049,6 +2051,46 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _adjust_threshold(self, params):
+        """Apply gimp-drawable-threshold to a layer."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            low         = float(params.get("low", 0.5))
+            high        = float(params.get("high", 1.0))
+            channel     = (params.get("channel") or "value").lower()
+            CHANNEL_MAP = {
+                "value": Gimp.HistogramChannel.VALUE,
+                "red":   Gimp.HistogramChannel.RED,
+                "green": Gimp.HistogramChannel.GREEN,
+                "blue":  Gimp.HistogramChannel.BLUE,
+                "alpha": Gimp.HistogramChannel.ALPHA,
+            }
+            ch = CHANNEL_MAP.get(channel, Gimp.HistogramChannel.VALUE)
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            image.undo_group_start()
+            try:
+                pdb  = Gimp.get_pdb()
+                proc = pdb.lookup_procedure("gimp-drawable-threshold")
+                if proc is None:
+                    return {"status": "error", "error": "gimp-drawable-threshold not available"}
+                cfg = proc.create_config()
+                cfg.set_property("drawable",       drawable)
+                cfg.set_property("channel",        ch)
+                cfg.set_property("low-threshold",  low)
+                cfg.set_property("high-threshold", high)
+                proc.run(cfg)
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "layer_name": drawable.get_name(),
+                "low": low, "high": high, "channel": channel,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

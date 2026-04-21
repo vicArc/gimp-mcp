@@ -732,6 +732,43 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def adjust_threshold(
+    ctx: Context,
+    low: float = 0.5,
+    high: float = 1.0,
+    channel: str = "value",
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Threshold a layer channel via gimp-drawable-threshold.
+
+    Parameters:
+    - low: Lower threshold (0..1, default 0.5)
+    - high: Upper threshold (0..1, default 1.0)
+    - channel: "value" (default), "red", "green", "blue", "alpha"
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, low, high, channel}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("adjust_threshold", {
+            "low":         low,
+            "high":        high,
+            "channel":     channel,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"adjust_threshold failed: {e}")
+
+
+@mcp.tool()
 def adjust_levels(
     ctx: Context,
     low_input: float = 0,
