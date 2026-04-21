@@ -2037,6 +2037,61 @@ def gradient_fill(
         raise Exception(f"gradient_fill failed: {e}")
 
 
+@mcp.tool()
+def paint_stroke(
+    ctx: Context,
+    tool: str,
+    strokes: list,
+    layer_name: str | None = None,
+    brush: str | None = None,
+    size: float | None = None,
+    hardness: float | None = None,
+    opacity: float | None = None,
+    dynamics: str | None = None,
+    color: str | None = None,
+    mode: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Unified paint-tool stroke dispatcher.
+
+    One entry point for paintbrush/pencil/airbrush/smudge/eraser/dodge/burn/
+    convolve (always available) plus ink/mypaint (depending on GIMP build).
+    Context (brush, size, hardness, opacity, dynamics, color, mode) is pushed
+    before the stroke and popped afterward; omit to inherit current context.
+
+    Parameters:
+    - tool: One of "paintbrush", "pencil", "airbrush", "smudge", "eraser",
+      "ink", "dodge", "burn", "mypaint", "convolve"
+    - strokes: Flat list of floats [x1, y1, x2, y2, ...] (even length required)
+    - layer_name: Target layer (defaults to active)
+    - brush, size, hardness, opacity, dynamics, color, mode: optional context
+    - image_index: Target image index (default 0)
+
+    Returns: {tool, pdb, stroke_count, layer_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("paint_stroke", {
+            "tool":        tool,
+            "strokes":     strokes,
+            "layer_name":  layer_name,
+            "brush":       brush,
+            "size":        size,
+            "hardness":    hardness,
+            "opacity":     opacity,
+            "dynamics":    dynamics,
+            "color":       color,
+            "mode":        mode,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"paint_stroke failed: {e}")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CATEGORY 7 — Text
 # ─────────────────────────────────────────────────────────────────────────────

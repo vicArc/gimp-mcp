@@ -369,6 +369,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._fill_ellipse(j.get("params", {}))
             elif "type" in j and j["type"] == "gradient_fill":
                 return self._gradient_fill(j.get("params", {}))
+            elif "type" in j and j["type"] == "paint_stroke":
+                return self._paint_stroke(j.get("params", {}))
             # ── Category 7: Text ──────────────────────────────────────────────
             elif "type" in j and j["type"] == "add_text":
                 return self._add_text(j.get("params", {}))
@@ -3018,6 +3020,139 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    # Map tool name → (PDB procedure name). All paint-tool defaults take just
+    # (drawable, strokes) in GIMP 3.2 — dynamics/brush/color come from context.
+    _PAINT_TOOL_PDB = {
+        "paintbrush":  "gimp-paintbrush-default",
+        "pencil":      "gimp-pencil",
+        "airbrush":    "gimp-airbrush-default",
+        "smudge":      "gimp-smudge-default",
+        "eraser":      "gimp-eraser-default",
+        "dodge":       "gimp-dodgeburn-default",
+        "burn":        "gimp-dodgeburn-default",
+        "convolve":    "gimp-convolve-default",
+        "ink":         "gimp-ink",
+        "mypaint":     "gimp-mypaint-brush-default",
+    }
+
+    def _apply_paint_context(self, brush, size, hardness, opacity, dynamics, color, mode, dodgeburn_type):
+        """Push paint context settings. Each setter is best-effort; unknown props skip."""
+        from gi.repository import Gegl
+        if brush is not None:
+            try:
+                brush_obj = Gimp.Brush.get_by_name(brush)
+                if brush_obj is not None:
+                    Gimp.context_set_brush(brush_obj)
+            except Exception:
+                pass
+        if size is not None:
+            try: Gimp.context_set_brush_size(float(size))
+            except Exception: pass
+        if hardness is not None:
+            try: Gimp.context_set_brush_hardness(float(hardness))
+            except Exception: pass
+        if opacity is not None:
+            try: Gimp.context_set_opacity(float(opacity))
+            except Exception: pass
+        if dynamics is not None:
+            try: Gimp.context_set_dynamics_name(dynamics)
+            except Exception: pass
+        if color is not None:
+            try: Gimp.context_set_foreground(Gegl.Color.new(color))
+            except Exception: pass
+        if mode is not None:
+            try: Gimp.context_set_paint_mode(self._blend_mode_from_string(mode))
+            except Exception: pass
+        if dodgeburn_type is not None:
+            for setter_name in ("context_set_dodge_burn_type", "context_set_dodgeburn_type"):
+                setter = getattr(Gimp, setter_name, None)
+                if setter is None:
+                    continue
+                try:
+                    dbtype = (Gimp.DodgeBurnType.DODGE if dodgeburn_type == "dodge"
+                              else Gimp.DodgeBurnType.BURN)
+                    setter(dbtype)
+                    break
+                except Exception:
+                    continue
+
+    def _paint_stroke(self, params):
+        """Unified paint-tool stroke dispatcher.
+
+        Wraps gimp-paintbrush-default / pencil / airbrush / smudge / eraser /
+        dodgeburn / convolve / ink / mypaint via (drawable, strokes) PDB calls.
+        Context (brush, size, hardness, opacity, dynamics, color, mode) is
+        pushed before the call and popped in finally.
+        """
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            tool        = (params.get("tool") or "paintbrush").lower()
+            raw_strokes = params.get("strokes") or []
+            brush       = params.get("brush")
+            size        = params.get("size")
+            hardness    = params.get("hardness")
+            opacity     = params.get("opacity")
+            dynamics    = params.get("dynamics")
+            color       = params.get("color")
+            mode        = params.get("mode")
+
+            if not isinstance(raw_strokes, list) or not raw_strokes:
+                return {"status": "error",
+                        "error": "paint_stroke: 'strokes' must be a non-empty list [x1,y1,x2,y2,...]"}
+            if len(raw_strokes) % 2 != 0:
+                return {"status": "error",
+                        "error": "paint_stroke: 'strokes' length must be even (x,y pairs)"}
+            try:
+                strokes = [float(v) for v in raw_strokes]
+            except (TypeError, ValueError) as conv_err:
+                return {"status": "error",
+                        "error": f"paint_stroke: non-numeric stroke value ({conv_err})"}
+
+            pdb_name = self._PAINT_TOOL_PDB.get(tool)
+            if pdb_name is None:
+                return {"status": "error",
+                        "error": f"paint_stroke: unknown tool '{tool}'. Valid: {sorted(self._PAINT_TOOL_PDB)}"}
+
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+
+            pdb  = Gimp.get_pdb()
+            proc = pdb.lookup_procedure(pdb_name)
+            if proc is None:
+                return {"status": "error",
+                        "error": f"paint_stroke: PDB procedure not available in this GIMP build: {pdb_name}"}
+
+            dodgeburn_type = tool if tool in ("dodge", "burn") else None
+
+            image.undo_group_start()
+            Gimp.context_push()
+            try:
+                self._apply_paint_context(brush, size, hardness, opacity,
+                                          dynamics, color, mode, dodgeburn_type)
+                if tool == "ink" and size is not None:
+                    try: Gimp.context_set_ink_size(float(size))
+                    except Exception: pass
+
+                cfg = proc.create_config()
+                cfg.set_property("drawable", drawable)
+                cfg.set_property("strokes",  strokes)
+                proc.run(cfg)
+            finally:
+                Gimp.context_pop()
+                image.undo_group_end()
+
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":       "success",
+                "tool":         tool,
+                "pdb":          pdb_name,
+                "stroke_count": len(strokes) // 2,
+                "layer_name":   drawable.get_name(),
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
