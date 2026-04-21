@@ -732,6 +732,52 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def black_and_white(
+    ctx: Context,
+    red: float = 40,
+    yellow: float = 60,
+    green: float = 40,
+    cyan: float = 60,
+    blue: float = 20,
+    magenta: float = 80,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Channel-mixed black-and-white conversion.
+
+    Six-color weight model collapses to an approximate RGB channel mixer
+    followed by a luminance desaturate, covering the common Photoshop
+    'Black & White' sliders in one call.
+
+    Parameters:
+    - red, yellow, green, cyan, blue, magenta: Weights per hue (default
+      40/60/40/60/20/80 — a neutral starting point)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, red, yellow, green, cyan, blue, magenta}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("black_and_white", {
+            "red":         red,
+            "yellow":      yellow,
+            "green":       green,
+            "cyan":        cyan,
+            "blue":        blue,
+            "magenta":     magenta,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"black_and_white failed: {e}")
+
+
+@mcp.tool()
 def shadows_highlights(
     ctx: Context,
     shadow_amount: float = 50,

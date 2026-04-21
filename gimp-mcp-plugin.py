@@ -326,6 +326,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._exposure(j.get("params", {}))
             elif "type" in j and j["type"] == "shadows_highlights":
                 return self._shadows_highlights(j.get("params", {}))
+            elif "type" in j and j["type"] == "black_and_white":
+                return self._black_and_white(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2059,6 +2061,59 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _black_and_white(self, params):
+        """Channel-mixed BW conversion using gegl:channel-mixer + desaturate.
+
+        Weights are interpreted as ~percentage influence for each source
+        channel on the luminance result. Default weights approximate
+        Photoshop's 'Black & White' defaults.
+        """
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            red         = float(params.get("red",     40))
+            yellow      = float(params.get("yellow",  60))
+            green       = float(params.get("green",   40))
+            cyan        = float(params.get("cyan",    60))
+            blue        = float(params.get("blue",    20))
+            magenta     = float(params.get("magenta", 80))
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            # Collapse the six-color weights into approximate RGB-channel
+            # contributions. Yellow ≈ red+green, cyan ≈ green+blue,
+            # magenta ≈ red+blue, so each primary gets half of its
+            # corresponding secondaries as a first-order approximation.
+            r_w = (red    + yellow/2 + magenta/2) / 100.0
+            g_w = (green  + yellow/2 + cyan/2)    / 100.0
+            b_w = (blue   + cyan/2   + magenta/2) / 100.0
+            image.undo_group_start()
+            try:
+                # Step 1: channel-mix the luminance mapping on each channel.
+                self._apply_gegl_filter(image, drawable, "gegl:channel-mixer", {
+                    "rr-gain":     r_w, "rg-gain":     g_w, "rb-gain":     b_w,
+                    "gr-gain":     r_w, "gg-gain":     g_w, "gb-gain":     b_w,
+                    "br-gain":     r_w, "bg-gain":     g_w, "bb-gain":     b_w,
+                    "preserve-luminosity": True,
+                })
+                # Step 2: desaturate to pure greyscale for safety.
+                pdb  = Gimp.get_pdb()
+                proc = pdb.lookup_procedure("gimp-drawable-desaturate")
+                if proc is not None:
+                    cfg = proc.create_config()
+                    cfg.set_property("drawable",       drawable)
+                    cfg.set_property("desaturate-mode", Gimp.DesaturateMode.LUMINANCE)
+                    proc.run(cfg)
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "layer_name": drawable.get_name(),
+                "red": red, "yellow": yellow, "green": green,
+                "cyan": cyan, "blue": blue, "magenta": magenta,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
