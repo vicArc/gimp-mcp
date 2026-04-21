@@ -2926,6 +2926,46 @@ def list_gegl_operations(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def path_stroke(
+    ctx: Context,
+    path_name: str,
+    layer_name: str | None = None,
+    brush: str | None = None,
+    size: float | None = None,
+    opacity: float | None = None,
+    color: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Stroke a named path on a drawable via edit_stroke_item.
+
+    Parameters:
+    - path_name: Name of the path to stroke
+    - layer_name: Target layer (defaults to active)
+    - brush, size, opacity, color: optional context overrides
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, path_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("path_stroke", {
+            "path_name":   path_name,
+            "layer_name":  layer_name,
+            "brush":       brush,
+            "size":        size,
+            "opacity":     opacity,
+            "color":       color,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"path_stroke failed: {e}")
+
+
+@mcp.tool()
 def path_to_selection(
     ctx: Context,
     path_name: str,

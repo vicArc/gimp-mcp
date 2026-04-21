@@ -435,6 +435,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._path_create(j.get("params", {}))
             elif "type" in j and j["type"] == "path_to_selection":
                 return self._path_to_selection(j.get("params", {}))
+            elif "type" in j and j["type"] == "path_stroke":
+                return self._path_stroke(j.get("params", {}))
             elif "cmds" in j:
                 a = ['python-fu-exec', j["cmds"]]
             else:
@@ -4330,6 +4332,47 @@ class MCPPlugin(Gimp.PlugIn):
             if p.get_name() == path_name:
                 return p
         return None
+
+    def _path_stroke(self, params):
+        """Stroke a named path on a drawable via edit_stroke_item.
+
+        Context (brush, size, opacity, color) is pushed before the stroke
+        and popped in finally. Dynamics/hardness/mode are left to the
+        existing context — use paint_stroke for a fully parameterised call.
+        """
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            path_name   = params.get("path_name") or ""
+            brush       = params.get("brush")
+            size        = params.get("size")
+            opacity     = params.get("opacity")
+            color       = params.get("color")
+
+            if not path_name:
+                return {"status": "error", "error": "path_stroke: 'path_name' is required"}
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            path     = self._resolve_path(image, path_name)
+            if path is None:
+                return {"status": "error", "error": f"path not found: {path_name}"}
+
+            image.undo_group_start()
+            Gimp.context_push()
+            try:
+                self._apply_paint_context(brush, size, None, opacity, None, color, None, None)
+                drawable.edit_stroke_item(path)
+            finally:
+                Gimp.context_pop()
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":     "success",
+                "layer_name": drawable.get_name(),
+                "path_name":  path_name,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
     def _path_to_selection(self, params):
         """Convert a named path to a selection using image.select_item."""
