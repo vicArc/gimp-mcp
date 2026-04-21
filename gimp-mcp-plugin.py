@@ -5366,6 +5366,39 @@ class MCPPlugin(Gimp.PlugIn):
                 continue
         return None
 
+    def _list_layer_filters(self, params):
+        """Enumerate non-destructive filters attached to a layer."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            filters = []
+            for f in (drawable.get_filters() or []):
+                try:    op = f.get_operation_name()
+                except Exception: op = None
+                try:    name = f.get_name()
+                except Exception: name = None
+                try:    visible = bool(f.get_visible())
+                except Exception: visible = None
+                try:    opacity = float(f.get_opacity())
+                except Exception: opacity = None
+                filters.append({
+                    "id":        f.get_id(),
+                    "name":      name,
+                    "operation": op,
+                    "visible":   visible,
+                    "opacity":   opacity,
+                })
+            return {"status": "success", "results": {
+                "status":     "success",
+                "layer_name": drawable.get_name(),
+                "count":      len(filters),
+                "filters":    filters,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     def _apply_filter_nondestructive(self, params):
         """Apply a GEGL op to a drawable without merging — keep it as a live filter.
 

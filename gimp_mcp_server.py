@@ -3803,6 +3803,35 @@ def text_layer_to_path(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def list_layer_filters(
+    ctx: Context,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Enumerate non-destructive filters attached to a layer.
+
+    Parameters:
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, count,
+              filters: [{id, name, operation, visible, opacity}, ...]}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_layer_filters", {
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_layer_filters failed: {e}")
+
+
+@mcp.tool()
 def apply_filter_nondestructive(
     ctx: Context,
     operation: str,
