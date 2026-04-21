@@ -3803,6 +3803,40 @@ def text_layer_to_path(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def toggle_layer_filter(
+    ctx: Context,
+    filter_id: int,
+    visible: bool | None = None,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Show or hide a non-destructive filter.
+
+    Parameters:
+    - filter_id: Filter id from list_layer_filters
+    - visible: Explicit visibility (True/False); omit to toggle
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {filter_id, previous, visible}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("toggle_layer_filter", {
+            "filter_id":   filter_id,
+            "visible":     visible,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"toggle_layer_filter failed: {e}")
+
+
+@mcp.tool()
 def remove_layer_filter(
     ctx: Context,
     filter_id: int,

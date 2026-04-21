@@ -5366,6 +5366,34 @@ class MCPPlugin(Gimp.PlugIn):
                 continue
         return None
 
+    def _toggle_layer_filter(self, params):
+        """Show / hide a live filter via filter.set_visible."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            filter_id   = params.get("filter_id")
+            visible     = params.get("visible")
+            if filter_id is None:
+                return {"status": "error", "error": "toggle_layer_filter: 'filter_id' is required"}
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            filter_obj = self._resolve_filter(drawable, filter_id)
+            if filter_obj is None:
+                return {"status": "error", "error": f"filter_id {filter_id} not found on layer"}
+            try: current = bool(filter_obj.get_visible())
+            except Exception: current = None
+            new_state = (not current) if visible is None and current is not None else bool(visible)
+            filter_obj.set_visible(new_state)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":    "success",
+                "filter_id": filter_id,
+                "previous":  current,
+                "visible":   new_state,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     def _remove_layer_filter(self, params):
         """Remove a live filter from a layer via gimp-drawable-filter-delete.
 
