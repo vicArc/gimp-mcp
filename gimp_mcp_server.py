@@ -3568,6 +3568,37 @@ def path_create(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def rename_channel(
+    ctx: Context,
+    channel_name: str,
+    new_name: str,
+    image_index: int = 0,
+) -> dict:
+    """Rename a named channel.
+
+    Parameters:
+    - channel_name: Current channel name
+    - new_name: Replacement name
+    - image_index: Target image index (default 0)
+
+    Returns: {old_name, new_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("rename_channel", {
+            "channel_name": channel_name,
+            "new_name":     new_name,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"rename_channel failed: {e}")
+
+
+@mcp.tool()
 def delete_channel(
     ctx: Context,
     channel_name: str,

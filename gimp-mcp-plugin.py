@@ -5363,6 +5363,30 @@ class MCPPlugin(Gimp.PlugIn):
             pass
         return None
 
+    def _rename_channel(self, params):
+        """Rename a named channel via channel.set_name."""
+        try:
+            image_index  = int(params.get("image_index", 0))
+            channel_name = params.get("channel_name") or ""
+            new_name     = (params.get("new_name") or "").strip()
+            if not channel_name:
+                return {"status": "error", "error": "rename_channel: 'channel_name' is required"}
+            if not new_name:
+                return {"status": "error", "error": "rename_channel: 'new_name' is required"}
+            image = self._get_image(image_index)
+            channel = self._resolve_channel(image, channel_name)
+            if channel is None:
+                return {"status": "error", "error": f"channel not found: {channel_name}"}
+            channel.set_name(new_name)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":   "success",
+                "old_name": channel_name,
+                "new_name": channel.get_name(),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     def _delete_channel(self, params):
         """Remove a named channel via image.remove_channel."""
         try:
