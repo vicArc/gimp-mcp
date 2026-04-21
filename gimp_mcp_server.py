@@ -3228,6 +3228,43 @@ def list_gegl_operations(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def import_svg_as_path(
+    ctx: Context,
+    file_path: str,
+    merge: bool = True,
+    scale: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Import an SVG file as one or more paths.
+
+    Uses the GIMP 3.2 gimp-image-import-paths-from-file PDB procedure
+    (replaces gimp-vectors-import-from-file from 3.0).
+
+    Parameters:
+    - file_path: Absolute path of the SVG file
+    - merge: Merge all SVG paths into one GIMP path (default True)
+    - scale: Scale paths to the image's coordinate system (default True)
+    - image_index: Target image index (default 0)
+
+    Returns: {file_path, merge, scale, imported: [{id, name}, ...], count}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("import_svg_as_path", {
+            "file_path":   file_path,
+            "merge":       merge,
+            "scale":       scale,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"import_svg_as_path failed: {e}")
+
+
+@mcp.tool()
 def path_stroke(
     ctx: Context,
     path_name: str,

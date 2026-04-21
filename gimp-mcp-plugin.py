@@ -453,6 +453,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._path_to_selection(j.get("params", {}))
             elif "type" in j and j["type"] == "path_stroke":
                 return self._path_stroke(j.get("params", {}))
+            elif "type" in j and j["type"] == "import_svg_as_path":
+                return self._import_svg_as_path(j.get("params", {}))
             elif "cmds" in j:
                 a = ['python-fu-exec', j["cmds"]]
             else:
@@ -4761,6 +4763,55 @@ class MCPPlugin(Gimp.PlugIn):
             if p.get_name() == path_name:
                 return p
         return None
+
+    def _import_svg_as_path(self, params):
+        """Import an SVG file as one or more paths via gimp-image-import-paths-from-file.
+
+        The 3.2 proc replaces the 3.0-era gimp-vectors-import-from-file.
+        """
+        try:
+            from gi.repository import Gio
+            image_index = int(params.get("image_index", 0))
+            file_path   = params.get("file_path", "")
+            merge       = bool(params.get("merge", True))
+            scale       = bool(params.get("scale", True))
+
+            if not file_path:
+                return {"status": "error", "error": "import_svg_as_path: 'file_path' is required"}
+            if not os.path.exists(file_path):
+                return {"status": "error", "error": f"file not found: {file_path}"}
+
+            image = self._get_image(image_index)
+            pdb   = Gimp.get_pdb()
+            proc  = pdb.lookup_procedure("gimp-image-import-paths-from-file")
+            if proc is None:
+                return {"status": "error",
+                        "error": "gimp-image-import-paths-from-file not available"}
+
+            paths_before = {p.get_id() for p in (image.get_paths() or [])}
+            image.undo_group_start()
+            try:
+                cfg = proc.create_config()
+                cfg.set_property("image", image)
+                cfg.set_property("file",  Gio.File.new_for_path(file_path))
+                cfg.set_property("merge", merge)
+                cfg.set_property("scale", scale)
+                proc.run(cfg)
+            finally:
+                image.undo_group_end()
+
+            imported = [p for p in (image.get_paths() or []) if p.get_id() not in paths_before]
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":      "success",
+                "file_path":   file_path,
+                "merge":       merge,
+                "scale":       scale,
+                "imported":    [{"id": p.get_id(), "name": p.get_name()} for p in imported],
+                "count":       len(imported),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
     def _path_stroke(self, params):
         """Stroke a named path on a drawable via edit_stroke_item.
