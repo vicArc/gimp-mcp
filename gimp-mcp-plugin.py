@@ -324,6 +324,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._color_temperature(j.get("params", {}))
             elif "type" in j and j["type"] == "exposure":
                 return self._exposure(j.get("params", {}))
+            elif "type" in j and j["type"] == "shadows_highlights":
+                return self._shadows_highlights(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2057,6 +2059,40 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _shadows_highlights(self, params):
+        """Apply gegl:shadows-highlights for tonal rescue."""
+        try:
+            image_index       = int(params.get("image_index", 0))
+            layer_name        = params.get("layer_name", None)
+            shadow_amount     = float(params.get("shadow_amount", 50))
+            highlight_amount  = float(params.get("highlight_amount", -50))
+            radius            = float(params.get("radius", 30))
+            color_correction  = float(params.get("color_correction", 20))
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            image.undo_group_start()
+            try:
+                self._apply_gegl_filter(image, drawable, "gegl:shadows-highlights", {
+                    "shadows":          shadow_amount,
+                    "highlights":       highlight_amount,
+                    "radius":           radius,
+                    "compress":         0.0,
+                    "shadows-ccorrect":    color_correction,
+                    "highlights-ccorrect": color_correction,
+                })
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "layer_name": drawable.get_name(),
+                "shadow_amount":    shadow_amount,
+                "highlight_amount": highlight_amount,
+                "radius":           radius,
+                "color_correction": color_correction,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
