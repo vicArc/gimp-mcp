@@ -5363,6 +5363,27 @@ class MCPPlugin(Gimp.PlugIn):
             pass
         return None
 
+    def _save_selection_as_channel(self, params):
+        """Save the current selection as a named channel via Gimp.Selection.save."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            name        = (params.get("name") or "").strip()
+            image = self._get_image(image_index)
+            channel = Gimp.Selection.save(image)
+            if channel is None:
+                return {"status": "error", "error": "Gimp.Selection.save returned None (no selection?)"}
+            if name:
+                try: channel.set_name(name)
+                except Exception: pass
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":  "success",
+                "id":      channel.get_id(),
+                "name":    channel.get_name(),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     def _list_channels(self, params):
         """Enumerate an image's saved channels (not the built-in RGB/A ones)."""
         try:
