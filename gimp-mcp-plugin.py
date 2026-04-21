@@ -328,6 +328,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._shadows_highlights(j.get("params", {}))
             elif "type" in j and j["type"] == "black_and_white":
                 return self._black_and_white(j.get("params", {}))
+            elif "type" in j and j["type"] == "photo_filter":
+                return self._photo_filter(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2061,6 +2063,61 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _photo_filter(self, params):
+        """Warming/cooling overlay approximation.
+
+        GIMP 3.2 lacks a dedicated gegl:photo-filter op; this tool builds
+        an equivalent effect by creating a transient color layer at the
+        requested density, merging it onto the target. The result matches
+        Photoshop's 'Photo Filter' adjustment closely enough for color
+        grading workflows.
+        """
+        try:
+            from gi.repository import Gegl
+            image_index         = int(params.get("image_index", 0))
+            layer_name          = params.get("layer_name", None)
+            color_str           = params.get("color", "#ffd699")
+            density             = float(params.get("density", 25))
+            preserve_luminosity = bool(params.get("preserve_luminosity", True))
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+
+            opacity = max(0.0, min(100.0, density))
+            image.undo_group_start()
+            try:
+                overlay = Gimp.Layer.new(image, "photo-filter-overlay",
+                                         drawable.get_width(), drawable.get_height(),
+                                         Gimp.ImageType.RGBA_IMAGE,
+                                         opacity,
+                                         Gimp.LayerMode.HSL_COLOR if preserve_luminosity
+                                         else Gimp.LayerMode.NORMAL)
+                image.insert_layer(overlay, None, -1)
+                try: offs = drawable.get_offsets()
+                except Exception: offs = None
+                if isinstance(offs, tuple) and len(offs) >= 3:
+                    overlay.translate(int(offs[1]), int(offs[2]))
+                Gimp.context_push()
+                try:
+                    Gimp.context_set_foreground(Gegl.Color.new(color_str))
+                    Gimp.Drawable.edit_fill(overlay, Gimp.FillType.FOREGROUND)
+                finally:
+                    Gimp.context_pop()
+                merged = image.merge_down(overlay, Gimp.MergeType.CLIP_TO_IMAGE)
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success",
+                "layer_name":          merged.get_name() if merged is not None else drawable.get_name(),
+                "color":               color_str,
+                "density":             density,
+                "preserve_luminosity": preserve_luminosity,
+                "note": "photo_filter is implemented via a color overlay + HSL_COLOR merge; "
+                        "GIMP 3.2 has no dedicated gegl:photo-filter op.",
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
