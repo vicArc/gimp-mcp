@@ -350,6 +350,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._reorder_layer(j.get("params", {}))
             elif "type" in j and j["type"] == "transform_layer":
                 return self._transform_layer(j.get("params", {}))
+            elif "type" in j and j["type"] == "add_layer_mask":
+                return self._add_layer_mask(j.get("params", {}))
             elif "type" in j and j["type"] == "flatten_image":
                 return self._flatten_image(j.get("params", {}))
             elif "type" in j and j["type"] == "merge_visible_layers":
@@ -2742,6 +2744,56 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    _ADD_MASK_TYPE_MAP = {
+        "white":           "WHITE",
+        "black":           "BLACK",
+        "alpha":           "ALPHA",
+        "alpha-transfer":  "ALPHA_TRANSFER",
+        "alpha_transfer":  "ALPHA_TRANSFER",
+        "selection":       "SELECTION",
+        "copy":            "COPY",
+        "channel":         "CHANNEL",
+    }
+
+    def _add_layer_mask(self, params):
+        """Create and attach a layer mask of the requested type."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            mask_type   = (params.get("mask_type") or "white").lower()
+
+            enum_name = self._ADD_MASK_TYPE_MAP.get(mask_type)
+            if enum_name is None:
+                return {"status": "error",
+                        "error": f"add_layer_mask: unknown mask_type '{mask_type}'. "
+                                 f"Valid: {sorted(self._ADD_MASK_TYPE_MAP)}"}
+            mt = getattr(Gimp.AddMaskType, enum_name, None)
+            if mt is None:
+                return {"status": "error",
+                        "error": f"add_layer_mask: Gimp.AddMaskType.{enum_name} not available in this build"}
+
+            image = self._get_image(image_index)
+            layer = self._resolve_layer(image, layer_name, None)
+            if layer.get_mask() is not None:
+                return {"status": "error",
+                        "error": f"layer '{layer.get_name()}' already has a mask"}
+
+            image.undo_group_start()
+            try:
+                mask = layer.create_mask(mt)
+                layer.add_mask(mask)
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":     "success",
+                "layer_name": layer.get_name(),
+                "mask_id":    mask.get_id() if mask is not None else None,
+                "mask_type":  mask_type,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

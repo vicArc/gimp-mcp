@@ -1722,6 +1722,40 @@ def reorder_layer(
 
 
 @mcp.tool()
+def add_layer_mask(
+    ctx: Context,
+    layer_name: str | None = None,
+    mask_type: str = "white",
+    image_index: int = 0,
+) -> dict:
+    """Create and attach a layer mask of the requested type.
+
+    Parameters:
+    - layer_name: Target layer (defaults to active)
+    - mask_type: "white" (default, fully opaque), "black" (fully transparent),
+      "alpha" (from layer alpha), "alpha-transfer" (from layer alpha, then
+      clear the layer), "selection" (current selection), "copy" (layer content
+      as grayscale), "channel"
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, mask_id, mask_type}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("add_layer_mask", {
+            "layer_name":  layer_name,
+            "mask_type":   mask_type,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"add_layer_mask failed: {e}")
+
+
+@mcp.tool()
 def transform_layer(
     ctx: Context,
     layer_name: str | None = None,
