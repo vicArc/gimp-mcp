@@ -732,6 +732,26 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def set_foreground(ctx: Context, color: str) -> dict:
+    """Set the paint-context foreground color.
+
+    Parameters:
+    - color: CSS name, hex, or rgb() string
+
+    Returns: {color}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("set_foreground", {"color": color})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"set_foreground failed: {e}")
+
+
+@mcp.tool()
 def apply_seamless_tile(
     ctx: Context,
     layer_name: str | None = None,

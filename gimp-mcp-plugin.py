@@ -354,6 +354,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._apply_waterpixels(j.get("params", {}))
             elif "type" in j and j["type"] == "apply_seamless_tile":
                 return self._apply_seamless_tile(j.get("params", {}))
+            elif "type" in j and j["type"] == "set_foreground":
+                return self._set_foreground(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2087,6 +2089,20 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _set_foreground(self, params):
+        """Set the paint-context foreground color."""
+        try:
+            from gi.repository import Gegl
+            color_str = params.get("color", "")
+            if not color_str:
+                return {"status": "error", "error": "set_foreground: 'color' is required"}
+            Gimp.context_set_foreground(Gegl.Color.new(color_str))
+            return {"status": "success", "results": {
+                "status": "success", "color": color_str,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
