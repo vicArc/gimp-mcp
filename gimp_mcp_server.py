@@ -2745,6 +2745,96 @@ def get_histogram(
         raise Exception(f"get_histogram failed: {e}")
 
 
+@mcp.tool()
+def apply_filter(
+    ctx: Context,
+    operation: str,
+    properties: dict | None = None,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Apply an arbitrary GEGL operation to a drawable and merge it.
+
+    Replaces removed `plug-in-*` PDB procedures (plug-in-gauss, plug-in-unsharp-mask,
+    plug-in-colortoalpha, plug-in-edge, plug-in-mblur, etc.) in GIMP 3.2.
+
+    Parameters:
+    - operation: GEGL op name, e.g. "gegl:gaussian-blur", "gegl:unsharp-mask"
+    - properties: Dict of op properties (key → value); unknown keys are ignored
+    - layer_name: Target layer; defaults to the active/top layer
+    - image_index: Target image index (default 0)
+
+    Returns: {operation, props_applied, layer_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_filter", {
+            "operation":   operation,
+            "properties":  properties or {},
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_filter failed: {e}")
+
+
+@mcp.tool()
+def get_pdb_procedure_info(ctx: Context, name: str) -> dict:
+    """Return metadata for a PDB procedure: blurb, help, authors, args, return values.
+
+    Discovery helper for GIMP 3.2 — lets you inspect a procedure's real argument
+    signature before calling it via `pdb.lookup_procedure(name).run(cfg)`
+    (the replacement for the removed `Gimp.get_pdb().run_procedure`).
+
+    Parameters:
+    - name: PDB procedure name, e.g. "gimp-drawable-hue-saturation"
+
+    Returns: {name, blurb, help, authors, copyright, date, arguments, return_values}
+      where arguments/return_values are lists of {name, type, blurb}.
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_pdb_procedure_info", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_pdb_procedure_info failed: {e}")
+
+
+@mcp.tool()
+def list_gegl_operations(
+    ctx: Context,
+    prefix: str = "",
+    contains: str = "",
+) -> dict:
+    """List available GEGL operations for use with apply_filter.
+
+    Parameters:
+    - prefix: Only include ops whose name starts with this (e.g. "gegl:")
+    - contains: Only include ops whose name contains this substring (case-insensitive)
+
+    Returns: {count, operations, prefix, contains}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_gegl_operations", {
+            "prefix":   prefix,
+            "contains": contains,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_gegl_operations failed: {e}")
+
+
 def main():
     mcp.run()
 

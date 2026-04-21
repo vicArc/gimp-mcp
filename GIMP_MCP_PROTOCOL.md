@@ -475,3 +475,97 @@ gimp_info = get_gimp_info()
 - Batch process images
 - Create custom GIMP tools and filters
 - Debug GIMP Python scripts
+
+## GIMP 3.2 Migration Notes
+
+GIMP 3.2 dropped or renamed several API entry points that older scripts (including AI-generated ones written against 2.x docs) still call. The notes below summarize the breaks that have bitten real scripts running through this MCP bridge, plus the supported 3.2 replacements.
+
+### `Gimp.get_pdb().run_procedure` is removed
+
+The single-call form is gone. Replace:
+
+```python
+# ✗ GIMP 3.0 — removed in 3.2
+Gimp.get_pdb().run_procedure("gimp-drawable-hue-saturation", [drawable, ...])
+```
+
+with a `lookup_procedure` → `create_config` → `run` sequence:
+
+```python
+# ✓ GIMP 3.2
+pdb  = Gimp.get_pdb()
+proc = pdb.lookup_procedure("gimp-drawable-hue-saturation")
+cfg  = proc.create_config()
+cfg.set_property("drawable",  drawable)
+cfg.set_property("hue-range", Gimp.HueRange.ALL)
+cfg.set_property("hue-offset", 10)
+cfg.set_property("saturation", 0)
+cfg.set_property("lightness",  0)
+cfg.set_property("overlap",    0.0)
+proc.run(cfg)
+```
+
+Use the new `get_pdb_procedure_info` tool to discover the real property names for any procedure before calling it.
+
+### Enum renames and removals
+
+| Old (2.x / pre-3.2)                       | New (3.2)                                   |
+|-------------------------------------------|---------------------------------------------|
+| `Gimp.DesaturateMode.LUMINOSITY`          | `Gimp.DesaturateMode.LUMINANCE` (or `.LUMA`)|
+| `Gimp.context_set_dynamics(name)`         | `Gimp.context_set_dynamics_name(name)`      |
+| `Gimp.Image.set_interpolation(img, kind)` | `Gimp.context_set_interpolation(kind)`      |
+| `file-png-save` PDB proc                  | `file-png-export`                           |
+| `file-jpeg-save` PDB proc                 | `file-jpeg-export`                          |
+
+`Gimp.file_save(...)` still routes correctly based on the file extension, so most user-facing code doesn't need to change — this only matters when you look up a PDB procedure by name yourself.
+
+### `hue_saturation` now requires 6 args
+
+`Gimp.Drawable.hue_saturation` gained an `overlap: float` argument in 3.2. Five-arg calls from older scripts crash with `TypeError`. Prefer the PDB route shown above (which names `overlap` explicitly as a property), or make sure direct calls pass all six arguments.
+
+### `Gimp.Image.select_grow/shrink/feather/invert` don't exist
+
+These shorthand methods are not on `Gimp.Image` in 3.2 — use the `Gimp.Selection.*` module form:
+
+```python
+# ✗
+Gimp.Image.select_grow(image, 3)
+# ✓
+Gimp.Selection.grow(image, 3)     # or .shrink / .feather / .border / .sharpen
+Gimp.Selection.invert(image)
+```
+
+The `modify_selection` and `invert_selection` endpoints wrap this correctly.
+
+### Removed `plug-in-*` PDB procedures
+
+Most `plug-in-gauss` / `plug-in-unsharp-mask` / `plug-in-hsv-noise` / `plug-in-colortoalpha` / `plug-in-edge` / `plug-in-mblur` style procedures no longer exist. The 3.2 replacement is the DrawableFilter pipeline:
+
+```python
+f = Gimp.DrawableFilter.new(drawable, "gegl:gaussian-blur", "blur")
+f.get_config().set_property("std-dev-x", 3.0)
+f.get_config().set_property("std-dev-y", 3.0)
+drawable.merge_filter(f)
+```
+
+Prefer the new `apply_filter` tool (takes `operation` + `properties` dict) instead of calling this by hand, and use `list_gegl_operations` to discover op names.
+
+### Protocol quirk — `pyGObject-console` list semantics
+
+When calling `call_api("exec", ["pyGObject-console", [lines…]])`, **each element of the list is exec'd as an independent top-level statement**. Multi-line blocks (`def`, `for`, `if`) split across list entries raise `SyntaxError: expected an indented block`.
+
+```python
+# ✗ BROKEN — each line is exec'd on its own
+["def foo():", "    return 1"]
+
+# ✓ WORKS — one multi-line string
+["def foo():\n    return 1\n"]
+```
+
+Since the exec context is persistent across calls, you can also split the definition and the call into two separate list entries as long as each entry is self-contained.
+
+### New endpoints exposed for 3.2 ergonomics
+
+- `apply_filter(operation, properties={}, layer_name=None, image_index=0)` — generic `Gimp.DrawableFilter` wrapper.
+- `list_gegl_operations(prefix="", contains="")` — enumerate available `gegl:*` ops.
+- `get_pdb_procedure_info(name)` — return `{name, blurb, help, authors, copyright, date, arguments, return_values}` for a PDB procedure, including real property names.

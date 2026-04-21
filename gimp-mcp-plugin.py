@@ -387,6 +387,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._apply_vignette(j.get("params", {}))
             elif "type" in j and j["type"] == "apply_noise":
                 return self._apply_noise(j.get("params", {}))
+            elif "type" in j and j["type"] == "apply_filter":
+                return self._apply_filter(j.get("params", {}))
             # ── Category 9: Export Pipelines ──────────────────────────────────
             elif "type" in j and j["type"] == "export_icon_sizes":
                 return self._export_icon_sizes(j.get("params", {}))
@@ -419,6 +421,11 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._get_histogram(j.get("params", {}))
             elif "type" in j and j["type"] == "warp_region":
                 return self._warp_region(j.get("params", {}))
+            # ── Category 11: Discovery (3.2 migration helpers) ───────────────
+            elif "type" in j and j["type"] == "get_pdb_procedure_info":
+                return self._get_pdb_procedure_info(j.get("params", {}))
+            elif "type" in j and j["type"] == "list_gegl_operations":
+                return self._list_gegl_operations(j.get("params", {}))
             elif "cmds" in j:
                 a = ['python-fu-exec', j["cmds"]]
             else:
@@ -1558,18 +1565,22 @@ class MCPPlugin(Gimp.PlugIn):
             gio_file = Gio.File.new_for_path(file_path)
             pdb = Gimp.get_pdb()
             fmt_lower = fmt.lower()
-            proc_name_map = {
-                "png":  "file-png-save",
-                "jpeg": "file-jpeg-save",
-                "jpg":  "file-jpeg-save",
-                "webp": "file-webp-save",
-                "tiff": "file-tiff-save",
+            # GIMP 3.2 renamed the file-*-save procedures to file-*-export.
+            # Probe the 3.2 name first, then fall back to the 3.0-era name so
+            # this keeps working on older installs.
+            EXPORT_PROC_CANDIDATES = {
+                "png":  ["file-png-export",  "file-png-save"],
+                "jpeg": ["file-jpeg-export", "file-jpeg-save"],
+                "jpg":  ["file-jpeg-export", "file-jpeg-save"],
+                "webp": ["file-webp-export", "file-webp-save"],
+                "tiff": ["file-tiff-export", "file-tiff-save"],
             }
-            proc_name = proc_name_map.get(fmt_lower, "file-png-save")
-            proc = pdb.lookup_procedure(proc_name)
-            if proc is None:
-                # Fallback: try generic file-png-export
-                proc = pdb.lookup_procedure("file-png-export")
+            candidates = EXPORT_PROC_CANDIDATES.get(fmt_lower, ["file-png-export", "file-png-save"])
+            proc = None
+            for cand in candidates:
+                proc = pdb.lookup_procedure(cand)
+                if proc is not None:
+                    break
             if proc is None:
                 Gimp.file_overwrite(Gimp.RunMode.NONINTERACTIVE, image, gio_file)
             else:
@@ -3480,6 +3491,43 @@ class MCPPlugin(Gimp.PlugIn):
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
+    def _apply_filter(self, params):
+        """Apply an arbitrary GEGL operation to a drawable and merge the result.
+
+        Replaces the removed `plug-in-*` PDB procedures: callers name a GEGL op
+        (e.g. 'gegl:gaussian-blur') and pass a dict of GEGL properties.
+        """
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            op_name     = params.get("operation") or params.get("op_name") or ""
+            props       = params.get("properties") or params.get("props") or {}
+            if not op_name:
+                return {"status": "error",
+                        "error": "apply_filter: 'operation' is required (e.g. 'gegl:gaussian-blur')"}
+            if not isinstance(props, dict):
+                return {"status": "error",
+                        "error": "apply_filter: 'properties' must be an object mapping prop name to value"}
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            image.undo_group_start()
+            try:
+                self._apply_gegl_filter(image, drawable, op_name, props)
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {
+                "status": "success",
+                "results": {
+                    "status":        "success",
+                    "operation":     op_name,
+                    "props_applied": list(props.keys()),
+                    "layer_name":    drawable.get_name() if drawable is not None else None,
+                }
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     # =========================================================================
     # CATEGORY 9 — Export Pipelines
     # =========================================================================
@@ -4001,6 +4049,111 @@ class MCPPlugin(Gimp.PlugIn):
                 }
             else:
                 return {"status": "error", "error": "gimp-drawable-histogram not available"}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    # =========================================================================
+    # CATEGORY 11 — Discovery (3.2 migration helpers)
+    # =========================================================================
+
+    def _pspec_info(self, spec):
+        """Serialize a GObject.ParamSpec into a JSON-safe dict (name/type/blurb)."""
+        try:
+            return {
+                "name":  getattr(spec, "name", str(spec)),
+                "type":  getattr(getattr(spec, "value_type", None), "name", "unknown"),
+                "blurb": getattr(spec, "blurb", "") or "",
+            }
+        except Exception:
+            return {"name": str(spec), "type": "unknown", "blurb": ""}
+
+    def _get_pdb_procedure_info(self, params):
+        """Return metadata for a PDB procedure: blurb, help, authors, args, return values.
+
+        Lets callers discover the real signature before invoking a procedure,
+        which is the 3.2 replacement for poking at `Gimp.get_pdb().run_procedure`.
+        """
+        try:
+            name = (params.get("name") or "").strip()
+            if not name:
+                return {"status": "error", "error": "get_pdb_procedure_info: 'name' is required"}
+            pdb = Gimp.get_pdb()
+            proc = pdb.lookup_procedure(name)
+            if proc is None:
+                return {"status": "error", "error": f"PDB procedure not found: {name}"}
+
+            def _attr(getter, default=""):
+                try:
+                    val = getter()
+                    return val if val is not None else default
+                except Exception:
+                    return default
+
+            args    = [self._pspec_info(s) for s in (_attr(proc.get_arguments,    []) or [])]
+            returns = [self._pspec_info(s) for s in (_attr(proc.get_return_values, []) or [])]
+
+            return {
+                "status": "success",
+                "results": {
+                    "name":          name,
+                    "blurb":         _attr(proc.get_blurb),
+                    "help":          _attr(proc.get_help),
+                    "authors":       _attr(proc.get_authors),
+                    "copyright":     _attr(proc.get_copyright),
+                    "date":          _attr(proc.get_date),
+                    "arguments":     args,
+                    "return_values": returns,
+                }
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _list_gegl_operations(self, params):
+        """List available GEGL operations matching an optional prefix (e.g. 'gegl:blur').
+
+        Use together with apply_filter to discover ops for DrawableFilter without
+        guessing op names the old `plug-in-*` PDB procedures used to own.
+        """
+        try:
+            from gi.repository import Gegl
+            prefix = params.get("prefix") or ""
+            contains = params.get("contains") or ""
+
+            # Gegl's op registry is empty until Gegl.init runs in the plugin's
+            # Python context. The call is idempotent, so initializing here is safe.
+            try:
+                Gegl.init(None)
+            except Exception:
+                pass
+
+            ops = []
+            try:
+                raw = Gegl.list_operations()
+                if isinstance(raw, (list, tuple)):
+                    ops = [str(o) for o in raw]
+                elif raw is not None:
+                    ops = [str(o) for o in list(raw)]
+            except Exception as gegl_err:
+                return {"status": "error",
+                        "error": f"Gegl.list_operations failed: {gegl_err}",
+                        "traceback": traceback.format_exc()}
+
+            if prefix:
+                ops = [o for o in ops if o.startswith(prefix)]
+            if contains:
+                needle = contains.lower()
+                ops = [o for o in ops if needle in o.lower()]
+            ops.sort()
+
+            return {
+                "status": "success",
+                "results": {
+                    "count":      len(ops),
+                    "operations": ops,
+                    "prefix":     prefix,
+                    "contains":   contains,
+                }
+            }
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
