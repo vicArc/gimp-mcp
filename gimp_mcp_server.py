@@ -732,6 +732,37 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def apply_oilify(
+    ctx: Context,
+    mask_radius: int = 4,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Painterly oilify smoothing via gegl:oilify.
+
+    Parameters:
+    - mask_radius: Neighborhood radius (default 4); larger = more painterly
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, mask_radius}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_oilify", {
+            "mask_radius": mask_radius,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_oilify failed: {e}")
+
+
+@mcp.tool()
 def apply_displacement(
     ctx: Context,
     x_map_layer: str,

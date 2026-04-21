@@ -346,6 +346,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._apply_bump_map(j.get("params", {}))
             elif "type" in j and j["type"] == "apply_displacement":
                 return self._apply_displacement(j.get("params", {}))
+            elif "type" in j and j["type"] == "apply_oilify":
+                return self._apply_oilify(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2079,6 +2081,29 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _apply_oilify(self, params):
+        """Apply gegl:oilify — painterly smoothing filter."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            mask_radius = int(params.get("mask_radius", 4))
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            image.undo_group_start()
+            try:
+                self._apply_gegl_filter(image, drawable, "gegl:oilify", {
+                    "mask-radius": mask_radius,
+                })
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "layer_name": drawable.get_name(),
+                "mask_radius": mask_radius,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
