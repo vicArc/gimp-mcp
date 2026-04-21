@@ -5366,6 +5366,42 @@ class MCPPlugin(Gimp.PlugIn):
                 continue
         return None
 
+    def _remove_layer_filter(self, params):
+        """Remove a live filter from a layer via gimp-drawable-filter-delete.
+
+        Drawable.remove_filter is not exposed in the Python binding in
+        current 3.2 builds, so this uses the PDB procedure directly.
+        """
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            filter_id   = params.get("filter_id")
+            if filter_id is None:
+                return {"status": "error", "error": "remove_layer_filter: 'filter_id' is required"}
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            filter_obj = self._resolve_filter(drawable, filter_id)
+            if filter_obj is None:
+                return {"status": "error", "error": f"filter_id {filter_id} not found on layer"}
+            pdb  = Gimp.get_pdb()
+            proc = pdb.lookup_procedure("gimp-drawable-filter-delete")
+            if proc is None:
+                return {"status": "error", "error": "gimp-drawable-filter-delete not available"}
+            image.undo_group_start()
+            try:
+                cfg = proc.create_config()
+                cfg.set_property("filter", filter_obj)
+                proc.run(cfg)
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":    "success",
+                "filter_id": filter_id,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     def _update_layer_filter(self, params):
         """Set one or more GEGL properties on a live filter via filter.get_config."""
         try:
