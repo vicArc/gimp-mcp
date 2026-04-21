@@ -334,6 +334,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._apply_unsharp_mask(j.get("params", {}))
             elif "type" in j and j["type"] == "apply_motion_blur":
                 return self._apply_motion_blur(j.get("params", {}))
+            elif "type" in j and j["type"] == "apply_lens_blur":
+                return self._apply_lens_blur(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2067,6 +2069,29 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _apply_lens_blur(self, params):
+        """Apply gegl:lens-blur."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            radius      = float(params.get("radius", 5.0))
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            image.undo_group_start()
+            try:
+                self._apply_gegl_filter(image, drawable, "gegl:lens-blur", {
+                    "radius": radius,
+                })
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "layer_name": drawable.get_name(),
+                "radius": radius,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
