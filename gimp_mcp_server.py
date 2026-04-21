@@ -2926,6 +2926,37 @@ def list_gegl_operations(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def path_to_selection(
+    ctx: Context,
+    path_name: str,
+    operation: str = "replace",
+    image_index: int = 0,
+) -> dict:
+    """Convert a named path to a selection via image.select_item.
+
+    Parameters:
+    - path_name: Name of the path to convert
+    - operation: "replace" (default), "add", "subtract", "intersect"
+    - image_index: Target image index (default 0)
+
+    Returns: {path_name, operation}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("path_to_selection", {
+            "path_name":   path_name,
+            "operation":   operation,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"path_to_selection failed: {e}")
+
+
+@mcp.tool()
 def path_create(
     ctx: Context,
     name: str,

@@ -433,6 +433,8 @@ class MCPPlugin(Gimp.PlugIn):
             # ── Category 12: Paths ────────────────────────────────────────────
             elif "type" in j and j["type"] == "path_create":
                 return self._path_create(j.get("params", {}))
+            elif "type" in j and j["type"] == "path_to_selection":
+                return self._path_to_selection(j.get("params", {}))
             elif "cmds" in j:
                 a = ['python-fu-exec', j["cmds"]]
             else:
@@ -4319,6 +4321,38 @@ class MCPPlugin(Gimp.PlugIn):
     # =========================================================================
     # CATEGORY 12 — Paths
     # =========================================================================
+
+    def _resolve_path(self, image, path_name):
+        """Look up a path by name in an image. Returns None if not found."""
+        if not path_name:
+            return None
+        for p in (image.get_paths() or []):
+            if p.get_name() == path_name:
+                return p
+        return None
+
+    def _path_to_selection(self, params):
+        """Convert a named path to a selection using image.select_item."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            path_name   = params.get("path_name") or ""
+            operation   = (params.get("operation") or "replace").lower()
+            if not path_name:
+                return {"status": "error", "error": "path_to_selection: 'path_name' is required"}
+            image = self._get_image(image_index)
+            path  = self._resolve_path(image, path_name)
+            if path is None:
+                return {"status": "error", "error": f"path not found: {path_name}"}
+            op = self._channel_ops_from_string(operation)
+            image.select_item(op, path)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":    "success",
+                "path_name": path_name,
+                "operation": operation,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
     def _path_create(self, params):
         """Create a bezier path and insert it into the image.
