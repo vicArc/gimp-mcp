@@ -5363,6 +5363,29 @@ class MCPPlugin(Gimp.PlugIn):
             pass
         return None
 
+    def _channel_to_selection(self, params):
+        """Load a named channel back into the selection via image.select_item."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            channel_name = params.get("channel_name") or ""
+            operation    = (params.get("operation") or "replace").lower()
+            if not channel_name:
+                return {"status": "error", "error": "channel_to_selection: 'channel_name' is required"}
+            image = self._get_image(image_index)
+            channel = self._resolve_channel(image, channel_name)
+            if channel is None:
+                return {"status": "error", "error": f"channel not found: {channel_name}"}
+            op = self._channel_ops_from_string(operation)
+            image.select_item(op, channel)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":       "success",
+                "channel_name": channel_name,
+                "operation":    operation,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     def _save_selection_as_channel(self, params):
         """Save the current selection as a named channel via Gimp.Selection.save."""
         try:

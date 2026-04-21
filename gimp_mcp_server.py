@@ -3568,6 +3568,40 @@ def path_create(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def channel_to_selection(
+    ctx: Context,
+    channel_name: str,
+    operation: str = "replace",
+    image_index: int = 0,
+) -> dict:
+    """Load a named channel back into the selection.
+
+    Wraps image.select_item(ChannelOps.<op>, channel). Companion to
+    save_selection_as_channel for the save-mask / reload-mask workflow.
+
+    Parameters:
+    - channel_name: Target channel's name
+    - operation: "replace" (default), "add", "subtract", "intersect"
+    - image_index: Target image index (default 0)
+
+    Returns: {channel_name, operation}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("channel_to_selection", {
+            "channel_name": channel_name,
+            "operation":    operation,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"channel_to_selection failed: {e}")
+
+
+@mcp.tool()
 def save_selection_as_channel(
     ctx: Context,
     name: str = "",
