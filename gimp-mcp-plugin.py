@@ -466,6 +466,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._get_histogram(j.get("params", {}))
             elif "type" in j and j["type"] == "warp_region":
                 return self._warp_region(j.get("params", {}))
+            elif "type" in j and j["type"] == "get_canvas_info":
+                return self._get_canvas_info(j.get("params", {}))
             # ── Category 11: Discovery (3.2 migration helpers) ───────────────
             elif "type" in j and j["type"] == "get_pdb_procedure_info":
                 return self._get_pdb_procedure_info(j.get("params", {}))
@@ -4660,6 +4662,81 @@ class MCPPlugin(Gimp.PlugIn):
                     "alpha":     a,
                 }
             }
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _get_canvas_info(self, params):
+        """Return a consolidated snapshot of the active image's state.
+
+        One call replaces the get_image_metadata + list_layers + selection
+        bounds round-trip chain most agents do at the start of every task.
+        """
+        try:
+            image_index = int(params.get("image_index", 0))
+            image = self._get_image(image_index)
+
+            width  = image.get_width()
+            height = image.get_height()
+
+            resolution = None
+            try:
+                res = image.get_resolution()
+                if isinstance(res, tuple) and len(res) >= 3:
+                    resolution = {"x": float(res[1]), "y": float(res[2])}
+                elif isinstance(res, tuple) and len(res) == 2:
+                    resolution = {"x": float(res[0]), "y": float(res[1])}
+            except Exception:
+                pass
+
+            MODE_MAP = {
+                Gimp.ImageBaseType.RGB:     "RGB",
+                Gimp.ImageBaseType.GRAY:    "Grayscale",
+                Gimp.ImageBaseType.INDEXED: "Indexed",
+            }
+            try: color_mode = MODE_MAP.get(image.get_base_type(), str(image.get_base_type()))
+            except Exception: color_mode = None
+
+            layers        = image.get_layers() or []
+            active_layers = image.get_selected_layers() or []
+            active_layer  = active_layers[0] if active_layers else (layers[0] if layers else None)
+
+            selection_bounds = None
+            try:
+                bounds = Gimp.Selection.bounds(image)
+                # Gimp.Selection.bounds returns (ok, non_empty, x1, y1, x2, y2)
+                if isinstance(bounds, tuple) and len(bounds) >= 6 and bounds[1]:
+                    selection_bounds = {
+                        "x":      int(bounds[2]),
+                        "y":      int(bounds[3]),
+                        "width":  int(bounds[4] - bounds[2]),
+                        "height": int(bounds[5] - bounds[3]),
+                    }
+            except Exception:
+                pass
+
+            has_alpha = None
+            if active_layer is not None:
+                try: has_alpha = bool(active_layer.has_alpha())
+                except Exception: pass
+
+            try: is_dirty = bool(image.is_dirty())
+            except Exception: is_dirty = None
+
+            return {"status": "success", "results": {
+                "status":               "success",
+                "image_id":             image.get_id(),
+                "width":                width,
+                "height":               height,
+                "resolution":           resolution,
+                "color_mode":           color_mode,
+                "num_layers":           len(layers),
+                "active_layer":         active_layer.get_name() if active_layer is not None else None,
+                "active_layer_id":      active_layer.get_id()   if active_layer is not None else None,
+                "active_layer_visible": bool(active_layer.get_visible()) if active_layer is not None else None,
+                "selection_bounds":     selection_bounds,
+                "has_alpha":            has_alpha,
+                "is_dirty":             is_dirty,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

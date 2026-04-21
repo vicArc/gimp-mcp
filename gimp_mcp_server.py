@@ -3113,6 +3113,31 @@ def get_pixel_color(
 
 
 @mcp.tool()
+def get_canvas_info(ctx: Context, image_index: int = 0) -> dict:
+    """Consolidated snapshot of an image's state in one round-trip.
+
+    Replaces the get_image_metadata + list_layers + selection-bounds chain
+    most agents run at the start of every task.
+
+    Parameters:
+    - image_index: Target image index (default 0)
+
+    Returns: {image_id, width, height, resolution, color_mode, num_layers,
+              active_layer, active_layer_id, active_layer_visible,
+              selection_bounds, has_alpha, is_dirty}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_canvas_info", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_canvas_info failed: {e}")
+
+
+@mcp.tool()
 def get_histogram(
     ctx: Context,
     channel: str = "value",
