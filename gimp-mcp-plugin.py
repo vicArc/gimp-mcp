@@ -338,6 +338,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._apply_lens_blur(j.get("params", {}))
             elif "type" in j and j["type"] == "apply_bokeh":
                 return self._apply_bokeh(j.get("params", {}))
+            elif "type" in j and j["type"] == "apply_despeckle":
+                return self._apply_despeckle(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2071,6 +2073,37 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _apply_despeckle(self, params):
+        """Despeckle / noise reduction.
+
+        GIMP 3.2 replaces the 2.x plug-in-despeckle with gegl:noise-reduction,
+        which is a simpler neighborhood-filter primitive. A median-strength
+        param drives iteration count; radius maps to the noise-reduction
+        iterations since the op is discrete per pass.
+        """
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            radius      = int(params.get("radius", 3))
+            median      = float(params.get("median", 50))
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            iterations = max(1, min(8, int(radius)))
+            image.undo_group_start()
+            try:
+                self._apply_gegl_filter(image, drawable, "gegl:noise-reduction", {
+                    "iterations": iterations,
+                })
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "layer_name": drawable.get_name(),
+                "radius": radius, "median": median, "iterations": iterations,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

@@ -732,6 +732,44 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def apply_despeckle(
+    ctx: Context,
+    radius: int = 3,
+    median: float = 50,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Noise reduction / despeckle.
+
+    Wraps gegl:noise-reduction (the GIMP 3.2 replacement for the removed
+    plug-in-despeckle). Radius drives the pass count (clamped 1..8).
+
+    Parameters:
+    - radius: Number of noise-reduction iterations (1..8, default 3)
+    - median: Legacy param retained for API stability (not used by
+      gegl:noise-reduction directly; default 50)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, radius, median, iterations}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_despeckle", {
+            "radius":      radius,
+            "median":      median,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_despeckle failed: {e}")
+
+
+@mcp.tool()
 def apply_bokeh(
     ctx: Context,
     radius: float = 5.0,
