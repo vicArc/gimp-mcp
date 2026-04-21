@@ -3568,6 +3568,46 @@ def path_create(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def set_channel_properties(
+    ctx: Context,
+    channel_name: str,
+    opacity: float | None = None,
+    color: str | None = None,
+    visible: bool | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Set opacity, overlay color, and/or visibility on a named channel.
+
+    Only non-None parameters are applied — omit a property to leave it
+    unchanged.
+
+    Parameters:
+    - channel_name: Target channel's name
+    - opacity: Channel opacity (0..100)
+    - color: Overlay color as CSS name, hex, or rgb() string
+    - visible: Visibility flag
+    - image_index: Target image index (default 0)
+
+    Returns: {channel_name, applied: {<keys that were actually set>}}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("set_channel_properties", {
+            "channel_name": channel_name,
+            "opacity":      opacity,
+            "color":        color,
+            "visible":      visible,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"set_channel_properties failed: {e}")
+
+
+@mcp.tool()
 def rename_channel(
     ctx: Context,
     channel_name: str,

@@ -5363,6 +5363,50 @@ class MCPPlugin(Gimp.PlugIn):
             pass
         return None
 
+    def _set_channel_properties(self, params):
+        """Set opacity / color / visibility on a named channel."""
+        try:
+            from gi.repository import Gegl
+            image_index  = int(params.get("image_index", 0))
+            channel_name = params.get("channel_name") or ""
+            opacity      = params.get("opacity")
+            color        = params.get("color")
+            visible      = params.get("visible")
+            if not channel_name:
+                return {"status": "error", "error": "set_channel_properties: 'channel_name' is required"}
+            image = self._get_image(image_index)
+            channel = self._resolve_channel(image, channel_name)
+            if channel is None:
+                return {"status": "error", "error": f"channel not found: {channel_name}"}
+
+            applied = {}
+            if opacity is not None:
+                try:
+                    channel.set_opacity(float(opacity))
+                    applied["opacity"] = float(opacity)
+                except Exception:
+                    pass
+            if color is not None:
+                try:
+                    channel.set_color(Gegl.Color.new(color))
+                    applied["color"] = color
+                except Exception:
+                    pass
+            if visible is not None:
+                try:
+                    channel.set_visible(bool(visible))
+                    applied["visible"] = bool(visible)
+                except Exception:
+                    pass
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":       "success",
+                "channel_name": channel_name,
+                "applied":      applied,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     def _rename_channel(self, params):
         """Rename a named channel via channel.set_name."""
         try:
