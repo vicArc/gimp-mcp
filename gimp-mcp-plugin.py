@@ -364,6 +364,14 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._get_average_color(j.get("params", {}))
             elif "type" in j and j["type"] == "get_dominant_colors":
                 return self._get_dominant_colors(j.get("params", {}))
+            elif "type" in j and j["type"] == "load_palette":
+                return self._load_palette(j.get("params", {}))
+            elif "type" in j and j["type"] == "save_palette":
+                return self._save_palette(j.get("params", {}))
+            elif "type" in j and j["type"] == "list_palettes":
+                return self._list_palettes(j.get("params", {}))
+            elif "type" in j and j["type"] == "get_palette_color":
+                return self._get_palette_color(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2097,6 +2105,136 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _load_palette(self, params):
+        """Load a GIMP .gpl palette file and install it as a named palette.
+
+        Parses the text .gpl format (header + r g b name rows), creates a
+        Gimp.Palette, and adds each entry. Returns the created palette's
+        name and entry count.
+        """
+        try:
+            from gi.repository import Gegl
+            file_path = params.get("file_path") or ""
+            override_name = (params.get("name") or "").strip()
+            if not file_path:
+                return {"status": "error", "error": "load_palette: 'file_path' is required"}
+            if not os.path.exists(file_path):
+                return {"status": "error", "error": f"file not found: {file_path}"}
+
+            parsed_name = None
+            entries = []
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    s = line.strip()
+                    if not s or s.startswith("#"):
+                        continue
+                    if s.startswith("GIMP Palette"):
+                        continue
+                    if s.lower().startswith("name:"):
+                        parsed_name = s.split(":", 1)[1].strip()
+                        continue
+                    if s.lower().startswith("columns:"):
+                        continue
+                    parts = s.split(None, 3)
+                    if len(parts) < 3:
+                        continue
+                    try:
+                        r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
+                    except ValueError:
+                        continue
+                    ename = parts[3] if len(parts) >= 4 else ""
+                    entries.append((r, g, b, ename))
+
+            if not entries:
+                return {"status": "error", "error": "no usable color entries in file"}
+
+            palette_name = override_name or parsed_name or os.path.splitext(os.path.basename(file_path))[0]
+            palette = Gimp.Palette.new(palette_name)
+            if palette is None:
+                return {"status": "error", "error": f"could not create palette '{palette_name}'"}
+            for r, g, b, ename in entries:
+                hex_color = "#{:02x}{:02x}{:02x}".format(r & 0xFF, g & 0xFF, b & 0xFF)
+                try: palette.add_entry(ename, Gegl.Color.new(hex_color))
+                except Exception: pass
+            return {"status": "success", "results": {
+                "status":       "success",
+                "palette_name": palette.get_name(),
+                "entries":      len(entries),
+                "source":       file_path,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _save_palette(self, params):
+        """Create a new palette with the given name and list of colors."""
+        try:
+            from gi.repository import Gegl
+            name   = (params.get("name") or "").strip()
+            colors = params.get("colors") or []
+            if not name:
+                return {"status": "error", "error": "save_palette: 'name' is required"}
+            if not isinstance(colors, list) or not colors:
+                return {"status": "error", "error": "save_palette: 'colors' must be a non-empty list"}
+            palette = Gimp.Palette.new(name)
+            if palette is None:
+                return {"status": "error", "error": f"could not create palette '{name}'"}
+            for i, c in enumerate(colors):
+                if isinstance(c, dict):
+                    col_str = c.get("hex") or c.get("color") or ""
+                    entry_name = c.get("name") or f"color_{i}"
+                else:
+                    col_str = str(c)
+                    entry_name = f"color_{i}"
+                if not col_str:
+                    continue
+                try: palette.add_entry(entry_name, Gegl.Color.new(col_str))
+                except Exception: pass
+            return {"status": "success", "results": {
+                "status":       "success",
+                "palette_name": palette.get_name(),
+                "entries":      len(colors),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _list_palettes(self, params):
+        """List palette names via Gimp.palettes_get_list."""
+        try:
+            filter_str = params.get("filter") or ""
+            names = Gimp.palettes_get_list(filter_str) or []
+            return {"status": "success", "results": {
+                "status":   "success",
+                "count":    len(names),
+                "filter":   filter_str,
+                "palettes": list(names),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _get_palette_color(self, params):
+        """Return one specific color from a named palette by index."""
+        try:
+            name  = params.get("name") or ""
+            index = int(params.get("index", 0))
+            if not name:
+                return {"status": "error", "error": "get_palette_color: 'name' is required"}
+            palette = Gimp.Palette.get_by_name(name)
+            if palette is None:
+                return {"status": "error", "error": f"palette not found: {name}"}
+            colors = palette.get_colors() or []
+            if not 0 <= index < len(colors):
+                return {"status": "error",
+                        "error": f"index {index} out of range (palette has {len(colors)} entries)"}
+            hex_color = self._color_to_hex(colors[index])
+            return {"status": "success", "results": {
+                "status":       "success",
+                "palette_name": name,
+                "index":        index,
+                "hex":          hex_color,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

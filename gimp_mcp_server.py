@@ -732,6 +732,110 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def load_palette(
+    ctx: Context,
+    file_path: str,
+    name: str = "",
+) -> dict:
+    """Load a GIMP .gpl palette file and install it as a named palette.
+
+    Parses the GIMP Palette text format (header + `r g b name` rows),
+    creates a palette, and adds each entry.
+
+    Parameters:
+    - file_path: Absolute path to the .gpl file
+    - name: Override the palette's name (default: parsed Name: or filename)
+
+    Returns: {palette_name, entries, source}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("load_palette", {
+            "file_path": file_path,
+            "name":      name,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"load_palette failed: {e}")
+
+
+@mcp.tool()
+def save_palette(
+    ctx: Context,
+    name: str,
+    colors: list,
+) -> dict:
+    """Create a new palette from a list of colors.
+
+    Parameters:
+    - name: Palette name
+    - colors: List of entries. Each entry may be a plain color string
+      (hex / CSS) or a dict {hex|color, name}
+
+    Returns: {palette_name, entries}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("save_palette", {
+            "name":   name,
+            "colors": colors,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"save_palette failed: {e}")
+
+
+@mcp.tool()
+def list_palettes(ctx: Context, filter: str = "") -> dict:
+    """List installed palettes.
+
+    Parameters:
+    - filter: Substring filter passed to gimp-palettes-get-list
+
+    Returns: {count, filter, palettes}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_palettes", {"filter": filter})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_palettes failed: {e}")
+
+
+@mcp.tool()
+def get_palette_color(ctx: Context, name: str, index: int = 0) -> dict:
+    """Return one specific color from a named palette by index.
+
+    Parameters:
+    - name: Palette name
+    - index: Zero-based color index
+
+    Returns: {palette_name, index, hex}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_palette_color", {
+            "name":  name,
+            "index": index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_palette_color failed: {e}")
+
+
+@mcp.tool()
 def get_dominant_colors(
     ctx: Context,
     k: int = 5,
