@@ -354,6 +354,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._add_layer_mask(j.get("params", {}))
             elif "type" in j and j["type"] == "remove_layer_mask":
                 return self._remove_layer_mask(j.get("params", {}))
+            elif "type" in j and j["type"] == "threshold_layer_mask":
+                return self._threshold_layer_mask(j.get("params", {}))
             elif "type" in j and j["type"] == "flatten_image":
                 return self._flatten_image(j.get("params", {}))
             elif "type" in j and j["type"] == "merge_visible_layers":
@@ -2759,6 +2761,56 @@ class MCPPlugin(Gimp.PlugIn):
         "copy":            "COPY",
         "channel":         "CHANNEL",
     }
+
+    def _threshold_layer_mask(self, params):
+        """Threshold a layer's mask in place via gimp-drawable-threshold."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            low         = float(params.get("low", 0.5))
+            high        = float(params.get("high", 1.0))
+            channel     = (params.get("channel") or "value").lower()
+
+            CHANNEL_MAP = {
+                "value": Gimp.HistogramChannel.VALUE,
+                "red":   Gimp.HistogramChannel.RED,
+                "green": Gimp.HistogramChannel.GREEN,
+                "blue":  Gimp.HistogramChannel.BLUE,
+                "alpha": Gimp.HistogramChannel.ALPHA,
+            }
+            ch = CHANNEL_MAP.get(channel, Gimp.HistogramChannel.VALUE)
+
+            image = self._get_image(image_index)
+            layer = self._resolve_layer(image, layer_name, None)
+            mask  = layer.get_mask()
+            if mask is None:
+                return {"status": "error",
+                        "error": f"layer '{layer.get_name()}' has no mask"}
+
+            image.undo_group_start()
+            try:
+                pdb = Gimp.get_pdb()
+                proc = pdb.lookup_procedure("gimp-drawable-threshold")
+                if proc is None:
+                    return {"status": "error", "error": "gimp-drawable-threshold not available"}
+                cfg = proc.create_config()
+                cfg.set_property("drawable",       mask)
+                cfg.set_property("channel",        ch)
+                cfg.set_property("low-threshold",  low)
+                cfg.set_property("high-threshold", high)
+                proc.run(cfg)
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":     "success",
+                "layer_name": layer.get_name(),
+                "low":        low,
+                "high":       high,
+                "channel":    channel,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
     def _remove_layer_mask(self, params):
         """Apply or discard a layer's mask."""
