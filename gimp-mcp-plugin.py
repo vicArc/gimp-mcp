@@ -340,6 +340,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._apply_bokeh(j.get("params", {}))
             elif "type" in j and j["type"] == "apply_despeckle":
                 return self._apply_despeckle(j.get("params", {}))
+            elif "type" in j and j["type"] == "apply_color_to_alpha":
+                return self._apply_color_to_alpha(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2073,6 +2075,36 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _apply_color_to_alpha(self, params):
+        """Apply gegl:color-to-alpha — drop a color out of the layer as transparency."""
+        try:
+            from gi.repository import Gegl
+            image_index             = int(params.get("image_index", 0))
+            layer_name              = params.get("layer_name", None)
+            color_str               = params.get("color", "white")
+            transparency_threshold  = float(params.get("transparency_threshold", 0.0))
+            opacity_threshold       = float(params.get("opacity_threshold", 1.0))
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            image.undo_group_start()
+            try:
+                self._apply_gegl_filter(image, drawable, "gegl:color-to-alpha", {
+                    "color":                  Gegl.Color.new(color_str),
+                    "transparency-threshold": transparency_threshold,
+                    "opacity-threshold":      opacity_threshold,
+                })
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "layer_name": drawable.get_name(),
+                "color": color_str,
+                "transparency_threshold": transparency_threshold,
+                "opacity_threshold":      opacity_threshold,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

@@ -732,6 +732,43 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def apply_color_to_alpha(
+    ctx: Context,
+    color: str = "white",
+    transparency_threshold: float = 0.0,
+    opacity_threshold: float = 1.0,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Drop a color out of a layer as transparency via gegl:color-to-alpha.
+
+    Parameters:
+    - color: Color to erase (CSS name, hex, or rgb()); default "white"
+    - transparency_threshold: Pixels matching <= this close to color go fully transparent
+    - opacity_threshold: Pixels matching >= this far from color stay fully opaque
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, color, transparency_threshold, opacity_threshold}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_color_to_alpha", {
+            "color":                  color,
+            "transparency_threshold": transparency_threshold,
+            "opacity_threshold":      opacity_threshold,
+            "layer_name":             layer_name,
+            "image_index":            image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_color_to_alpha failed: {e}")
+
+
+@mcp.tool()
 def apply_despeckle(
     ctx: Context,
     radius: int = 3,
