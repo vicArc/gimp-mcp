@@ -732,6 +732,49 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def apply_bump_map(
+    ctx: Context,
+    bump_layer_name: str,
+    azimuth: float = 135,
+    elevation: float = 45,
+    depth: float = 3,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Bump / relief lighting via gegl:bump-map.
+
+    Uses another layer as the height source and lights it from the
+    specified azimuth / elevation.
+
+    Parameters:
+    - bump_layer_name: Layer name whose luminance drives the height map
+    - azimuth: Light direction in degrees (default 135)
+    - elevation: Light elevation in degrees (default 45)
+    - depth: Bump depth scalar (default 3)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, bump_layer_name, azimuth, elevation, depth}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_bump_map", {
+            "bump_layer_name": bump_layer_name,
+            "azimuth":         azimuth,
+            "elevation":       elevation,
+            "depth":           depth,
+            "layer_name":      layer_name,
+            "image_index":     image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_bump_map failed: {e}")
+
+
+@mcp.tool()
 def apply_color_to_alpha(
     ctx: Context,
     color: str = "white",

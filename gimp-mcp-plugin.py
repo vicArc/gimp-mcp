@@ -342,6 +342,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._apply_despeckle(j.get("params", {}))
             elif "type" in j and j["type"] == "apply_color_to_alpha":
                 return self._apply_color_to_alpha(j.get("params", {}))
+            elif "type" in j and j["type"] == "apply_bump_map":
+                return self._apply_bump_map(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2075,6 +2077,43 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _apply_bump_map(self, params):
+        """Apply gegl:bump-map using a named layer as the height source."""
+        try:
+            image_index     = int(params.get("image_index", 0))
+            layer_name      = params.get("layer_name", None)
+            bump_layer_name = params.get("bump_layer_name") or ""
+            azimuth         = float(params.get("azimuth", 135))
+            elevation       = float(params.get("elevation", 45))
+            depth           = float(params.get("depth", 3))
+            if not bump_layer_name:
+                return {"status": "error",
+                        "error": "apply_bump_map: 'bump_layer_name' is required"}
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            bump     = self._resolve_layer(image, bump_layer_name, None)
+            image.undo_group_start()
+            try:
+                self._apply_gegl_filter(image, drawable, "gegl:bump-map", {
+                    "aux":       bump,
+                    "azimuth":   azimuth,
+                    "elevation": elevation,
+                    "depth":     depth,
+                })
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success",
+                "layer_name":      drawable.get_name(),
+                "bump_layer_name": bump.get_name(),
+                "azimuth":   azimuth,
+                "elevation": elevation,
+                "depth":     depth,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
