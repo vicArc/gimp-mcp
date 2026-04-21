@@ -5366,6 +5366,41 @@ class MCPPlugin(Gimp.PlugIn):
                 continue
         return None
 
+    def _update_layer_filter(self, params):
+        """Set one or more GEGL properties on a live filter via filter.get_config."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            filter_id   = params.get("filter_id")
+            props       = params.get("properties") or {}
+            if filter_id is None:
+                return {"status": "error", "error": "update_layer_filter: 'filter_id' is required"}
+            if not isinstance(props, dict):
+                return {"status": "error", "error": "update_layer_filter: 'properties' must be a dict"}
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            filter_obj = self._resolve_filter(drawable, filter_id)
+            if filter_obj is None:
+                return {"status": "error", "error": f"filter_id {filter_id} not found on layer"}
+            config = filter_obj.get_config()
+            if config is None:
+                return {"status": "error", "error": "filter has no config object"}
+            applied = []
+            for k, v in props.items():
+                try:
+                    config.set_property(k, v)
+                    applied.append(k)
+                except Exception:
+                    pass
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":    "success",
+                "filter_id": filter_obj.get_id(),
+                "applied":   applied,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     def _list_layer_filters(self, params):
         """Enumerate non-destructive filters attached to a layer."""
         try:
