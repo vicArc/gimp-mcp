@@ -732,6 +732,43 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def apply_unsharp_mask(
+    ctx: Context,
+    radius: float = 2.0,
+    amount: float = 0.5,
+    threshold: float = 0.0,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Sharpen a layer via gegl:unsharp-mask.
+
+    Parameters:
+    - radius: Gaussian standard deviation (default 2.0)
+    - amount: Contrast multiplier / 'strength' (default 0.5)
+    - threshold: Minimum contrast delta to sharpen (default 0.0)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, radius, amount, threshold}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_unsharp_mask", {
+            "radius":      radius,
+            "amount":      amount,
+            "threshold":   threshold,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_unsharp_mask failed: {e}")
+
+
+@mcp.tool()
 def photo_filter(
     ctx: Context,
     color: str = "#ffd699",
