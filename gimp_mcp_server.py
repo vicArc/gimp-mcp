@@ -3113,6 +3113,42 @@ def get_pixel_color(
 
 
 @mcp.tool()
+def get_layer_thumbnail(
+    ctx: Context,
+    layer_name: str | None = None,
+    max_size: int = 128,
+    image_index: int = 0,
+) -> dict:
+    """Return a small base64-encoded PNG thumbnail of a layer.
+
+    Uses Gimp.Drawable.get_thumbnail for a fast pre-scaled preview —
+    much lighter than get_image_bitmap for decision-making without a
+    full bitmap transfer.
+
+    Parameters:
+    - layer_name: Target layer (defaults to active)
+    - max_size: Maximum thumbnail edge in pixels (default 128); aspect
+      ratio is preserved and no upscale is applied
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, width, height, mime_type, size_bytes, data_base64}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_layer_thumbnail", {
+            "layer_name":  layer_name,
+            "max_size":    max_size,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_layer_thumbnail failed: {e}")
+
+
+@mcp.tool()
 def begin_transaction(ctx: Context, name: str, image_index: int = 0) -> dict:
     """Open a named undo group. Pair with commit_transaction or rollback_transaction.
 

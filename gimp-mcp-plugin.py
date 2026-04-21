@@ -476,6 +476,8 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._commit_transaction(j.get("params", {}))
             elif "type" in j and j["type"] == "rollback_transaction":
                 return self._rollback_transaction(j.get("params", {}))
+            elif "type" in j and j["type"] == "get_layer_thumbnail":
+                return self._get_layer_thumbnail(j.get("params", {}))
             # ── Category 11: Discovery (3.2 migration helpers) ───────────────
             elif "type" in j and j["type"] == "get_pdb_procedure_info":
                 return self._get_pdb_procedure_info(j.get("params", {}))
@@ -4670,6 +4672,64 @@ class MCPPlugin(Gimp.PlugIn):
                     "alpha":     a,
                 }
             }
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _get_layer_thumbnail(self, params):
+        """Return a small PNG thumbnail of a layer as base64.
+
+        Much lighter than get_image_bitmap — uses Gimp.Drawable.get_thumbnail
+        to get a pre-scaled GdkPixbuf and encodes it to PNG in one step.
+        """
+        try:
+            import base64
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            max_size    = int(params.get("max_size", 128))
+
+            image = self._get_image(image_index)
+            layer = self._resolve_layer(image, layer_name, None)
+
+            w = layer.get_width()
+            h = layer.get_height()
+            if w <= 0 or h <= 0:
+                return {"status": "error", "error": f"layer has zero size ({w}x{h})"}
+
+            scale = min(max_size / w, max_size / h, 1.0)
+            thumb_w = max(1, int(w * scale))
+            thumb_h = max(1, int(h * scale))
+
+            alpha_enum = getattr(Gimp.PixbufTransparency, "KEEP_ALPHA", None)
+            if alpha_enum is None:
+                alpha_enum = getattr(Gimp.PixbufTransparency, "SMALL_CHECKS", 0)
+
+            pixbuf = layer.get_thumbnail(thumb_w, thumb_h, alpha_enum)
+            if pixbuf is None:
+                return {"status": "error", "error": "get_thumbnail returned None"}
+
+            # GdkPixbuf.save_to_bufferv returns (ok, bytes) — signature varies
+            # across GI bindings; handle both the tuple and the data-only form.
+            save_result = pixbuf.save_to_bufferv("png", [], [])
+            if isinstance(save_result, tuple) and len(save_result) >= 2:
+                ok_flag, data = save_result[0], save_result[1]
+                if not ok_flag:
+                    return {"status": "error", "error": "pixbuf save_to_bufferv returned !ok"}
+            else:
+                data = save_result
+
+            png_bytes = bytes(data) if data is not None else b""
+            if not png_bytes:
+                return {"status": "error", "error": "pixbuf produced empty PNG"}
+
+            return {"status": "success", "results": {
+                "status":       "success",
+                "layer_name":   layer.get_name(),
+                "width":        thumb_w,
+                "height":       thumb_h,
+                "mime_type":    "image/png",
+                "size_bytes":   len(png_bytes),
+                "data_base64":  base64.b64encode(png_bytes).decode("ascii"),
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
