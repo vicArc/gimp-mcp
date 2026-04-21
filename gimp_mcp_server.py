@@ -3803,6 +3803,37 @@ def text_layer_to_path(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def merge_layer_filter(
+    ctx: Context,
+    filter_id: int,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Promote one live filter to destructive (bake it into the layer).
+
+    Parameters:
+    - filter_id: Filter id from list_layer_filters
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {filter_id, layer_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("merge_layer_filter", {
+            "filter_id":   filter_id,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"merge_layer_filter failed: {e}")
+
+
+@mcp.tool()
 def reorder_layer_filter(
     ctx: Context,
     filter_id: int,

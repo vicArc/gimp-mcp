@@ -5366,6 +5366,33 @@ class MCPPlugin(Gimp.PlugIn):
                 continue
         return None
 
+    def _merge_layer_filter(self, params):
+        """Promote a single live filter to destructive via drawable.merge_filter."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            filter_id   = params.get("filter_id")
+            if filter_id is None:
+                return {"status": "error", "error": "merge_layer_filter: 'filter_id' is required"}
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+            filter_obj = self._resolve_filter(drawable, filter_id)
+            if filter_obj is None:
+                return {"status": "error", "error": f"filter_id {filter_id} not found on layer"}
+            image.undo_group_start()
+            try:
+                drawable.merge_filter(filter_obj)
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":    "success",
+                "filter_id": filter_id,
+                "layer_name": drawable.get_name(),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
     def _reorder_layer_filter(self, params):
         """Change a filter's position in the NDE stack.
 
