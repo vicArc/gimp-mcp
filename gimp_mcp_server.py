@@ -691,6 +691,54 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def adjust_levels(
+    ctx: Context,
+    low_input: float = 0,
+    high_input: float = 255,
+    gamma: float = 1.0,
+    low_output: float = 0,
+    high_output: float = 255,
+    channel: str = "value",
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Precise manual levels — set black/white points + gamma.
+
+    Complements auto_levels for the common case; this call exposes explicit
+    input/output ranges per channel.
+
+    Parameters:
+    - low_input / high_input: Input black/white points (0..255 or 0..1)
+    - gamma: Input gamma (default 1.0)
+    - low_output / high_output: Output black/white points (0..255 or 0..1)
+    - channel: "value" (default), "red", "green", "blue", "alpha"
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, channel, low_input, high_input, low_output,
+              high_output, gamma}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("adjust_levels", {
+            "low_input":   low_input,
+            "high_input":  high_input,
+            "gamma":       gamma,
+            "low_output":  low_output,
+            "high_output": high_output,
+            "channel":     channel,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"adjust_levels failed: {e}")
+
+
+@mcp.tool()
 def adjust_curves(
     ctx: Context,
     preset: str = "s_curve",

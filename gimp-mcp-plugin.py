@@ -283,6 +283,8 @@ class MCPPlugin(Gimp.PlugIn):
             # ── Category 2: Image Adjustments ────────────────────────────────
             elif "type" in j and j["type"] == "auto_levels":
                 return self._auto_levels(j.get("params", {}))
+            elif "type" in j and j["type"] == "adjust_levels":
+                return self._adjust_levels(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_curves":
                 return self._adjust_curves(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
@@ -1861,6 +1863,70 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _adjust_levels(self, params):
+        """Precise manual levels via gimp-drawable-levels.
+
+        Input/output values accept both the 0..1 native range and the 0..255
+        convenience range — values > 1.0 are divided by 255 before the call.
+        """
+        try:
+            image_index  = int(params.get("image_index", 0))
+            layer_name   = params.get("layer_name", None)
+            channel      = (params.get("channel") or "value").lower()
+            low_input    = float(params.get("low_input", 0))
+            high_input   = float(params.get("high_input", 255))
+            gamma        = float(params.get("gamma", 1.0))
+            low_output   = float(params.get("low_output", 0))
+            high_output  = float(params.get("high_output", 255))
+
+            def _norm(v):
+                return v / 255.0 if v > 1.0 else v
+            li, hi = _norm(low_input),  _norm(high_input)
+            lo, ho = _norm(low_output), _norm(high_output)
+
+            CHANNEL_MAP = {
+                "value": Gimp.HistogramChannel.VALUE,
+                "red":   Gimp.HistogramChannel.RED,
+                "green": Gimp.HistogramChannel.GREEN,
+                "blue":  Gimp.HistogramChannel.BLUE,
+                "alpha": Gimp.HistogramChannel.ALPHA,
+            }
+            ch = CHANNEL_MAP.get(channel, Gimp.HistogramChannel.VALUE)
+
+            image    = self._get_image(image_index)
+            drawable = self._resolve_layer(image, layer_name, None)
+
+            image.undo_group_start()
+            try:
+                pdb = Gimp.get_pdb()
+                proc = pdb.lookup_procedure("gimp-drawable-levels")
+                if proc is None:
+                    return {"status": "error", "error": "gimp-drawable-levels not available"}
+                cfg = proc.create_config()
+                cfg.set_property("drawable",     drawable)
+                cfg.set_property("channel",      ch)
+                cfg.set_property("low-input",    li)
+                cfg.set_property("high-input",   hi)
+                cfg.set_property("clamp-input",  False)
+                cfg.set_property("gamma",        gamma)
+                cfg.set_property("low-output",   lo)
+                cfg.set_property("high-output",  ho)
+                cfg.set_property("clamp-output", False)
+                proc.run(cfg)
+            finally:
+                image.undo_group_end()
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":      "success",
+                "layer_name":  drawable.get_name(),
+                "channel":     channel,
+                "low_input":   low_input,  "high_input":  high_input,
+                "low_output":  low_output, "high_output": high_output,
+                "gamma":       gamma,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
