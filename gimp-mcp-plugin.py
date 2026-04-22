@@ -2905,14 +2905,29 @@ class MCPPlugin(Gimp.PlugIn):
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
+    def _resource_names(self, entries):
+        """Normalize a Gimp.*_get_list return into a list of name strings.
+
+        3.x returns lists of resource objects; 2.x and some bindings return
+        plain strings. Entries missing get_name() fall back to str(entry).
+        """
+        names = []
+        for e in (entries or []):
+            try:
+                getter = getattr(e, "get_name", None)
+                names.append(getter() if getter is not None else str(e))
+            except Exception:
+                names.append(str(e))
+        return names
+
     def _list_brushes(self, params):
         """List available brushes via Gimp.brushes_get_list."""
         try:
             filter_str = params.get("filter") or ""
-            names = Gimp.brushes_get_list(filter_str) or []
+            names = self._resource_names(Gimp.brushes_get_list(filter_str))
             return {"status": "success", "results": {
                 "status": "success", "count": len(names), "filter": filter_str,
-                "brushes": list(names),
+                "brushes": names,
             }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
@@ -2963,10 +2978,10 @@ class MCPPlugin(Gimp.PlugIn):
         """List available patterns via Gimp.patterns_get_list."""
         try:
             filter_str = params.get("filter") or ""
-            names = Gimp.patterns_get_list(filter_str) or []
+            names = self._resource_names(Gimp.patterns_get_list(filter_str))
             return {"status": "success", "results": {
                 "status": "success", "count": len(names), "filter": filter_str,
-                "patterns": list(names),
+                "patterns": names,
             }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
@@ -2975,10 +2990,10 @@ class MCPPlugin(Gimp.PlugIn):
         """List available gradients via Gimp.gradients_get_list."""
         try:
             filter_str = params.get("filter") or ""
-            names = Gimp.gradients_get_list(filter_str) or []
+            names = self._resource_names(Gimp.gradients_get_list(filter_str))
             return {"status": "success", "results": {
                 "status": "success", "count": len(names), "filter": filter_str,
-                "gradients": list(names),
+                "gradients": names,
             }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
@@ -3300,13 +3315,14 @@ class MCPPlugin(Gimp.PlugIn):
         """List palette names via Gimp.palettes_get_list."""
         try:
             filter_str = params.get("filter") or ""
-            names = Gimp.palettes_get_list(filter_str) or []
-            return {"status": "success", "results": {
-                "status":   "success",
-                "count":    len(names),
-                "filter":   filter_str,
-                "palettes": list(names),
-            }}
+            names = self._resource_names(Gimp.palettes_get_list(filter_str))
+            return {"status":  "success",
+                    "results": {
+                        "status":   "success",
+                        "count":    len(names),
+                        "filter":   filter_str,
+                        "palettes": names,
+                    }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
