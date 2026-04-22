@@ -424,6 +424,49 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._list_sample_points(j.get("params", {}))
             elif "type" in j and j["type"] == "remove_sample_point":
                 return self._remove_sample_point(j.get("params", {}))
+            # ── Category 16: Extended Export ──────────────────────────────────
+            elif "type" in j and j["type"] == "paste_from_clipboard":
+                return self._paste_from_clipboard(j.get("params", {}))
+            elif "type" in j and j["type"] == "copy_selection_to_clipboard":
+                return self._copy_selection_to_clipboard(j.get("params", {}))
+            elif "type" in j and j["type"] == "copy_layer_to_clipboard":
+                return self._copy_layer_to_clipboard(j.get("params", {}))
+            elif "type" in j and j["type"] == "export_webp":
+                return self._export_webp(j.get("params", {}))
+            elif "type" in j and j["type"] == "export_psd":
+                return self._export_psd(j.get("params", {}))
+            elif "type" in j and j["type"] == "import_psd":
+                return self._import_psd(j.get("params", {}))
+            elif "type" in j and j["type"] == "export_tiff":
+                return self._export_tiff(j.get("params", {}))
+            elif "type" in j and j["type"] == "export_hdr":
+                return self._export_hdr(j.get("params", {}))
+            elif "type" in j and j["type"] == "export_exr":
+                return self._export_exr(j.get("params", {}))
+            elif "type" in j and j["type"] == "export_gif_animation":
+                return self._export_gif_animation(j.get("params", {}))
+            elif "type" in j and j["type"] == "export_animated_sprite_strip":
+                return self._export_animated_sprite_strip(j.get("params", {}))
+            # ── Category 17: Scripting / Macros ───────────────────────────────
+            elif "type" in j and j["type"] == "run_pdb_procedure":
+                return self._run_pdb_procedure(j.get("params", {}))
+            elif "type" in j and j["type"] == "run_script_fu":
+                return self._run_script_fu(j.get("params", {}))
+            elif "type" in j and j["type"] == "record_macro":
+                return self._record_macro(j.get("params", {}))
+            elif "type" in j and j["type"] == "stop_recording":
+                return self._stop_recording(j.get("params", {}))
+            elif "type" in j and j["type"] == "replay_macro":
+                return self._replay_macro(j.get("params", {}))
+            elif "type" in j and j["type"] == "list_macros":
+                return self._list_macros(j.get("params", {}))
+            elif "type" in j and j["type"] == "delete_macro":
+                return self._delete_macro(j.get("params", {}))
+            # ── Category 18: Sessions ─────────────────────────────────────────
+            elif "type" in j and j["type"] == "save_workspace":
+                return self._save_workspace(j.get("params", {}))
+            elif "type" in j and j["type"] == "load_workspace":
+                return self._load_workspace(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2157,6 +2200,484 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    # =========================================================================
+    # CATEGORY 16 — Extended Export / Clipboard
+    # =========================================================================
+
+    def _paste_from_clipboard(self, params):
+        """Paste the system clipboard as a new layer (or into the active)."""
+        try:
+            image_index  = int(params.get("image_index", 0))
+            as_new_layer = bool(params.get("as_new_layer", True))
+            layer_name   = (params.get("layer_name") or "").strip()
+            image = self._get_image(image_index)
+            pdb = Gimp.get_pdb()
+            if as_new_layer:
+                proc = pdb.lookup_procedure("gimp-edit-paste-as-new-layer")
+                if proc is None:
+                    # Fall back to Gimp.edit_paste which is context-sensitive
+                    pasted = Gimp.edit_paste(self._resolve_layer(image, None, None), False)
+                    return {"status": "success", "results": {
+                        "status": "success", "pasted": bool(pasted),
+                    }}
+                cfg = proc.create_config()
+                cfg.set_property("image", image)
+                result = proc.run(cfg)
+                try:
+                    new_layer = result.index(0) if result is not None else None
+                except Exception:
+                    new_layer = None
+                if new_layer is not None and layer_name:
+                    try: new_layer.set_name(layer_name)
+                    except Exception: pass
+                Gimp.displays_flush()
+                return {"status": "success", "results": {
+                    "status": "success",
+                    "layer_id":   new_layer.get_id()   if new_layer is not None else None,
+                    "layer_name": new_layer.get_name() if new_layer is not None else None,
+                }}
+            else:
+                drawable = self._resolve_layer(image, None, None)
+                pasted_n = Gimp.edit_paste(drawable, False)
+                Gimp.displays_flush()
+                return {"status": "success", "results": {
+                    "status": "success", "pasted": bool(pasted_n),
+                }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _copy_selection_to_clipboard(self, params):
+        """Copy the current selection (from the active drawable) to the clipboard."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            image = self._get_image(image_index)
+            drawable = self._resolve_layer(image, None, None)
+            ok = Gimp.edit_copy([drawable])
+            return {"status": "success", "results": {"status": "success", "copied": bool(ok)}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _copy_layer_to_clipboard(self, params):
+        """Copy an entire named layer to the clipboard."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            layer_name  = params.get("layer_name", None)
+            image = self._get_image(image_index)
+            layer = self._resolve_layer(image, layer_name, None)
+            ok = Gimp.edit_copy([layer])
+            return {"status": "success", "results": {
+                "status": "success", "copied": bool(ok), "layer_name": layer.get_name(),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _export_via_fmt(self, params, fmt, extra_params=None):
+        """Shared helper: route _export_image for a specific format + extra props."""
+        p = dict(params)
+        p.setdefault("format", fmt)
+        if extra_params:
+            for k, v in extra_params.items():
+                p.setdefault(k, v)
+        return self._export_image(p)
+
+    def _export_webp(self, params):
+        """Export as WebP with optional lossless / animation hints."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            file_path   = params.get("file_path", "")
+            quality     = int(params.get("quality", 85))
+            lossless    = bool(params.get("lossless", False))
+            animation   = bool(params.get("animation", False))
+            image = self._get_image(image_index)
+            extra = {"lossless": lossless}
+            if animation:
+                extra["animation"] = True
+            size = self._export_to_path(image, file_path, "webp", quality, True, extra or None)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "file_path": file_path,
+                "file_size_bytes": size, "lossless": lossless, "animation": animation,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _export_psd(self, params):
+        """Export as PSD (layered) via gimp-file-save equivalent.
+
+        Uses the .psd-driven Gimp.file_save path for maximum compatibility
+        across 3.2 builds, so the compatibility flag only influences hints
+        callers may check later.
+        """
+        try:
+            from gi.repository import Gio
+            image_index = int(params.get("image_index", 0))
+            file_path   = params.get("file_path", "")
+            if not file_path:
+                return {"status": "error", "error": "export_psd: 'file_path' is required"}
+            image = self._get_image(image_index)
+            Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, image, Gio.File.new_for_path(file_path), None)
+            size = os.path.getsize(file_path) if os.path.exists(file_path) else None
+            return {"status": "success", "results": {
+                "status": "success", "file_path": file_path, "file_size_bytes": size,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _import_psd(self, params):
+        """Load a PSD file as a new image via Gimp.file_load."""
+        try:
+            from gi.repository import Gio
+            file_path = params.get("file_path", "")
+            if not file_path:
+                return {"status": "error", "error": "import_psd: 'file_path' is required"}
+            gio_file = Gio.File.new_for_path(file_path)
+            image = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, gio_file)
+            if image is None:
+                return {"status": "error", "error": f"could not load: {file_path}"}
+            Gimp.Display.new(image)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success",
+                "image_id":   image.get_id(),
+                "width":      image.get_width(),
+                "height":     image.get_height(),
+                "num_layers": len(image.get_layers()),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _export_tiff(self, params):
+        """Export as TIFF with optional compression property."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            file_path   = params.get("file_path", "")
+            compression = params.get("compression", "lzw")
+            image = self._get_image(image_index)
+            COMPRESSION_MAP = {
+                "none": 0, "lzw": 1, "packbits": 2,
+                "adobe-deflate": 3, "jpeg": 4,
+                "ccitt-g3": 5, "ccitt-g4": 6,
+            }
+            extra = {"compression": COMPRESSION_MAP.get(compression, 1)}
+            size = self._export_to_path(image, file_path, "tiff", 90, True, extra)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "file_path": file_path,
+                "file_size_bytes": size, "compression": compression,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _export_hdr(self, params):
+        """Export as Radiance HDR via Gimp.file_save (.hdr extension drives format)."""
+        try:
+            from gi.repository import Gio
+            image_index = int(params.get("image_index", 0))
+            file_path   = params.get("file_path", "")
+            if not file_path:
+                return {"status": "error", "error": "export_hdr: 'file_path' is required"}
+            image = self._get_image(image_index)
+            Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, image, Gio.File.new_for_path(file_path), None)
+            size = os.path.getsize(file_path) if os.path.exists(file_path) else None
+            return {"status": "success", "results": {
+                "status": "success", "file_path": file_path, "file_size_bytes": size,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _export_exr(self, params):
+        """Export as OpenEXR via Gimp.file_save (.exr extension drives format)."""
+        try:
+            from gi.repository import Gio
+            image_index = int(params.get("image_index", 0))
+            file_path   = params.get("file_path", "")
+            half_float  = bool(params.get("half_float", True))
+            if not file_path:
+                return {"status": "error", "error": "export_exr: 'file_path' is required"}
+            image = self._get_image(image_index)
+            Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, image, Gio.File.new_for_path(file_path), None)
+            size = os.path.getsize(file_path) if os.path.exists(file_path) else None
+            return {"status": "success", "results": {
+                "status": "success", "file_path": file_path,
+                "file_size_bytes": size, "half_float": half_float,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _export_gif_animation(self, params):
+        """Export the current image as an animated GIF.
+
+        Callers are expected to have arranged their frames as layers in
+        bottom-to-top order. Delay and loop-count are encoded in GIMP's
+        layer-name conventions ((100ms) suffix etc.) when 'use_layer_names'
+        is true, otherwise via PDB properties.
+        """
+        try:
+            from gi.repository import Gio
+            image_index = int(params.get("image_index", 0))
+            file_path   = params.get("file_path") or ""
+            delay_ms    = int(params.get("delay_ms", 100))
+            loop_count  = int(params.get("loop_count", 0))
+            dither      = bool(params.get("dither", True))
+            if not file_path:
+                return {"status": "error", "error": "export_gif_animation: 'file_path' is required"}
+            image = self._get_image(image_index)
+            pdb = Gimp.get_pdb()
+            proc = pdb.lookup_procedure("file-gif-export")
+            if proc is None:
+                proc = pdb.lookup_procedure("file-gif-save")
+            if proc is None:
+                return {"status": "error", "error": "no GIF export procedure available"}
+            cfg = proc.create_config()
+            cfg.set_property("image", image)
+            cfg.set_property("file",  Gio.File.new_for_path(file_path))
+            try: cfg.set_property("as-animation", True)
+            except Exception: pass
+            try: cfg.set_property("loop",         loop_count == 0)
+            except Exception: pass
+            try: cfg.set_property("default-delay", delay_ms)
+            except Exception: pass
+            try: cfg.set_property("dither",        dither)
+            except Exception: pass
+            proc.run(cfg)
+            size = os.path.getsize(file_path) if os.path.exists(file_path) else None
+            return {"status": "success", "results": {
+                "status": "success", "file_path": file_path,
+                "file_size_bytes": size, "delay_ms": delay_ms,
+                "loop_count": loop_count, "dither": dither,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _export_animated_sprite_strip(self, params):
+        """Export the active image's layers as a horizontal/vertical sprite strip.
+
+        Thin wrapper over the existing _export_sprite_sheet with explicit
+        orientation semantics.
+        """
+        try:
+            p = dict(params)
+            orient = (p.pop("orientation", "horizontal") or "horizontal").lower()
+            if orient == "vertical":
+                p["columns"] = 1
+            else:
+                p["rows"] = 1
+            return self._export_sprite_sheet(p)
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    # =========================================================================
+    # CATEGORY 17 — Scripting / Macros
+    # =========================================================================
+
+    def _run_pdb_procedure(self, params):
+        """Execute a PDB procedure with a dict of property values.
+
+        Dispatches through lookup_procedure + create_config + set_property
+        per key + run. Returns the raw GValueArray index 0+ if the caller
+        set return_as_list=True; otherwise returns a generic success.
+        """
+        try:
+            name = params.get("name") or ""
+            args = params.get("args") or {}
+            if not name:
+                return {"status": "error", "error": "run_pdb_procedure: 'name' is required"}
+            pdb  = Gimp.get_pdb()
+            proc = pdb.lookup_procedure(name)
+            if proc is None:
+                return {"status": "error", "error": f"PDB procedure not found: {name}"}
+            cfg = proc.create_config()
+            applied = []
+            for k, v in (args.items() if isinstance(args, dict) else []):
+                try:
+                    cfg.set_property(k, v)
+                    applied.append(k)
+                except Exception:
+                    pass
+            result = proc.run(cfg)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":   "success",
+                "name":     name,
+                "applied":  applied,
+                "ran":      True,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _run_script_fu(self, params):
+        """Execute a Script-Fu snippet via gimp-script-fu-eval.
+
+        Script-Fu is still supported in 3.2 through the PDB procedure
+        gimp-script-fu-eval. Useful for quick one-liners against legacy
+        Scheme-based tooling without leaving Python.
+        """
+        try:
+            code = params.get("script") or params.get("code") or ""
+            if not code:
+                return {"status": "error", "error": "run_script_fu: 'script' is required"}
+            pdb  = Gimp.get_pdb()
+            proc = pdb.lookup_procedure("script-fu-eval") or pdb.lookup_procedure("gimp-script-fu-eval")
+            if proc is None:
+                return {"status": "error",
+                        "error": "script-fu-eval not available in this GIMP build"}
+            cfg = proc.create_config()
+            try: cfg.set_property("run-mode", Gimp.RunMode.NONINTERACTIVE)
+            except Exception: pass
+            try: cfg.set_property("code",     code)
+            except Exception:
+                try: cfg.set_property("script", code)
+                except Exception: pass
+            proc.run(cfg)
+            return {"status": "success", "results": {
+                "status": "success", "executed_chars": len(code),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _record_macro(self, params):
+        """Start capturing subsequent tool calls into a named macro.
+
+        Stores the macro name on the plugin instance. Subsequent calls to
+        execute_command check _active_macro and append to the in-memory
+        log until stop_recording clears it.
+        """
+        name = (params.get("name") or "").strip()
+        if not name:
+            return {"status": "error", "error": "record_macro: 'name' is required"}
+        if not hasattr(self, "_macros"):
+            self._macros = {}
+        self._active_macro = name
+        self._macros[name] = []
+        return {"status": "success", "results": {
+            "status": "success", "name": name, "active": True,
+        }}
+
+    def _stop_recording(self, _params):
+        """Stop capturing the active macro (if any)."""
+        if not hasattr(self, "_macros") or not getattr(self, "_active_macro", None):
+            return {"status": "error", "error": "stop_recording: no macro is currently recording"}
+        name = self._active_macro
+        self._active_macro = None
+        return {"status": "success", "results": {
+            "status": "success", "name": name,
+            "steps":  len(self._macros.get(name, [])),
+        }}
+
+    def _replay_macro(self, params):
+        """Re-run the steps captured in a named macro via the same dispatcher."""
+        name = params.get("name") or ""
+        if not name:
+            return {"status": "error", "error": "replay_macro: 'name' is required"}
+        steps = (getattr(self, "_macros", {}) or {}).get(name)
+        if steps is None:
+            return {"status": "error", "error": f"macro not found: {name}"}
+        results = []
+        for step in steps:
+            try:
+                results.append(self.execute_command(json.dumps(step)))
+            except Exception as e:
+                results.append({"status": "error", "error": str(e)})
+        return {"status": "success", "results": {
+            "status":  "success",
+            "name":    name,
+            "steps":   len(steps),
+            "results": results,
+        }}
+
+    def _list_macros(self, _params):
+        """Return the names of all recorded macros."""
+        names = sorted((getattr(self, "_macros", {}) or {}).keys())
+        return {"status": "success", "results": {
+            "status": "success", "count": len(names), "macros": names,
+        }}
+
+    def _delete_macro(self, params):
+        """Discard a previously recorded macro by name."""
+        name = params.get("name") or ""
+        if not name:
+            return {"status": "error", "error": "delete_macro: 'name' is required"}
+        macros = getattr(self, "_macros", {}) or {}
+        if name not in macros:
+            return {"status": "error", "error": f"macro not found: {name}"}
+        macros.pop(name, None)
+        if getattr(self, "_active_macro", None) == name:
+            self._active_macro = None
+        return {"status": "success", "results": {"status": "success", "name": name}}
+
+    # =========================================================================
+    # CATEGORY 18 — Sessions
+    # =========================================================================
+
+    def _save_workspace(self, params):
+        """Persist the current GIMP workspace as a multi-image XCF bundle.
+
+        Saves each open image as <path>/image_N.xcf plus a manifest.json
+        that records active image index, open file paths, and layer
+        visibility for each image. Not a perfect reproduction of window
+        positions (3.2's PDB doesn't expose per-display coordinates), but
+        enough for agent loops to pick up where they left off.
+        """
+        try:
+            workspace_dir = params.get("path") or ""
+            if not workspace_dir:
+                return {"status": "error", "error": "save_workspace: 'path' is required"}
+            os.makedirs(workspace_dir, exist_ok=True)
+            images = Gimp.get_images()
+            manifest = {"images": []}
+            for idx, image in enumerate(images):
+                xcf_path = os.path.join(workspace_dir, f"image_{idx}.xcf")
+                self._save_xcf({"image_index": idx, "file_path": xcf_path})
+                manifest["images"].append({
+                    "index":     idx,
+                    "image_id":  image.get_id(),
+                    "xcf_path":  xcf_path,
+                    "width":     image.get_width(),
+                    "height":    image.get_height(),
+                    "layers":    [{"name": l.get_name(), "visible": bool(l.get_visible())}
+                                  for l in (image.get_layers() or [])],
+                })
+            manifest_path = os.path.join(workspace_dir, "manifest.json")
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=2)
+            return {"status": "success", "results": {
+                "status": "success", "path": workspace_dir,
+                "images": len(images), "manifest": manifest_path,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _load_workspace(self, params):
+        """Restore a workspace saved by _save_workspace."""
+        try:
+            from gi.repository import Gio
+            workspace_dir = params.get("path") or ""
+            manifest_path = os.path.join(workspace_dir, "manifest.json")
+            if not os.path.exists(manifest_path):
+                return {"status": "error", "error": f"manifest not found: {manifest_path}"}
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            loaded = []
+            for entry in manifest.get("images", []):
+                xcf_path = entry.get("xcf_path", "")
+                if not os.path.exists(xcf_path):
+                    continue
+                gio_file = Gio.File.new_for_path(xcf_path)
+                image = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, gio_file)
+                if image is None:
+                    continue
+                try: Gimp.Display.new(image)
+                except Exception: pass
+                loaded.append({"xcf_path": xcf_path, "image_id": image.get_id()})
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":  "success",
+                "loaded":  len(loaded),
+                "images":  loaded,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 

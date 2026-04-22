@@ -732,6 +732,405 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY 16 — Extended Export / Clipboard
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def paste_from_clipboard(
+    ctx: Context,
+    as_new_layer: bool = True,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Paste the system clipboard as a new layer (or into the active drawable).
+
+    Returns: {layer_id, layer_name} when as_new_layer; otherwise {pasted}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("paste_from_clipboard", {
+            "as_new_layer": as_new_layer,
+            "layer_name":   layer_name,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"paste_from_clipboard failed: {e}")
+
+
+@mcp.tool()
+def copy_selection_to_clipboard(ctx: Context, image_index: int = 0) -> dict:
+    """Copy the current selection content to the system clipboard."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("copy_selection_to_clipboard", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"copy_selection_to_clipboard failed: {e}")
+
+
+@mcp.tool()
+def copy_layer_to_clipboard(
+    ctx: Context,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Copy an entire named layer to the clipboard."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("copy_layer_to_clipboard", {
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"copy_layer_to_clipboard failed: {e}")
+
+
+@mcp.tool()
+def export_webp(
+    ctx: Context,
+    file_path: str,
+    quality: int = 85,
+    lossless: bool = False,
+    animation: bool = False,
+    image_index: int = 0,
+) -> dict:
+    """Export as WebP with optional lossless / animation hints."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_webp", {
+            "file_path":   file_path,
+            "quality":     quality,
+            "lossless":    lossless,
+            "animation":   animation,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_webp failed: {e}")
+
+
+@mcp.tool()
+def export_psd(ctx: Context, file_path: str, compatibility: bool = True, image_index: int = 0) -> dict:
+    """Export as PSD via Gimp.file_save (.psd extension drives format)."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_psd", {
+            "file_path":     file_path,
+            "compatibility": compatibility,
+            "image_index":   image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_psd failed: {e}")
+
+
+@mcp.tool()
+def import_psd(ctx: Context, file_path: str) -> dict:
+    """Load a PSD file as a new image."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("import_psd", {"file_path": file_path})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"import_psd failed: {e}")
+
+
+@mcp.tool()
+def export_tiff(ctx: Context, file_path: str, compression: str = "lzw", image_index: int = 0) -> dict:
+    """Export as TIFF with optional compression.
+
+    compression: "none" | "lzw" | "packbits" | "adobe-deflate" | "jpeg" |
+                 "ccitt-g3" | "ccitt-g4"
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_tiff", {
+            "file_path":   file_path,
+            "compression": compression,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_tiff failed: {e}")
+
+
+@mcp.tool()
+def export_hdr(ctx: Context, file_path: str, image_index: int = 0) -> dict:
+    """Export as Radiance HDR (.hdr)."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_hdr", {
+            "file_path":   file_path,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_hdr failed: {e}")
+
+
+@mcp.tool()
+def export_exr(ctx: Context, file_path: str, half_float: bool = True, image_index: int = 0) -> dict:
+    """Export as OpenEXR (.exr)."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_exr", {
+            "file_path":   file_path,
+            "half_float":  half_float,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_exr failed: {e}")
+
+
+@mcp.tool()
+def export_gif_animation(
+    ctx: Context,
+    file_path: str,
+    delay_ms: int = 100,
+    loop_count: int = 0,
+    dither: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Export the current image as an animated GIF (frames = layers).
+
+    Parameters:
+    - delay_ms: Default inter-frame delay (default 100)
+    - loop_count: 0 = infinite loop, else explicit loop count
+    - dither: Enable palette dithering (default True)
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_gif_animation", {
+            "file_path":   file_path,
+            "delay_ms":    delay_ms,
+            "loop_count":  loop_count,
+            "dither":      dither,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_gif_animation failed: {e}")
+
+
+@mcp.tool()
+def export_animated_sprite_strip(
+    ctx: Context,
+    output_path: str,
+    orientation: str = "horizontal",
+    padding: int = 0,
+    image_index: int = 0,
+) -> dict:
+    """Export the image's layers as a single-row or single-column sprite strip.
+
+    Thin extension of the existing export_sprite_sheet with a semantic
+    orientation param.
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_animated_sprite_strip", {
+            "output_path": output_path,
+            "orientation": orientation,
+            "padding":     padding,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_animated_sprite_strip failed: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY 17 — Scripting / Macros
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def run_pdb_procedure(ctx: Context, name: str, args: dict | None = None) -> dict:
+    """Execute a PDB procedure by name with a dict of property values.
+
+    Safer than call_api for single-proc invocations — works hand-in-hand
+    with get_pdb_procedure_info for discovery.
+
+    Parameters:
+    - name: PDB procedure name
+    - args: {property_name: value} dict (values auto-coerced by GObject)
+
+    Returns: {name, applied, ran}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("run_pdb_procedure", {
+            "name": name,
+            "args": args or {},
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"run_pdb_procedure failed: {e}")
+
+
+@mcp.tool()
+def run_script_fu(ctx: Context, script: str) -> dict:
+    """Execute a Script-Fu snippet via script-fu-eval."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("run_script_fu", {"script": script})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"run_script_fu failed: {e}")
+
+
+@mcp.tool()
+def record_macro(ctx: Context, name: str) -> dict:
+    """Start capturing subsequent tool calls into a named in-memory macro."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("record_macro", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"record_macro failed: {e}")
+
+
+@mcp.tool()
+def stop_recording(ctx: Context) -> dict:
+    """Stop capturing the active macro."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("stop_recording", {})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"stop_recording failed: {e}")
+
+
+@mcp.tool()
+def replay_macro(ctx: Context, name: str) -> dict:
+    """Re-run the steps captured in a named macro."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("replay_macro", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"replay_macro failed: {e}")
+
+
+@mcp.tool()
+def list_macros(ctx: Context) -> dict:
+    """Return the names of all recorded macros in the current plugin session."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_macros", {})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_macros failed: {e}")
+
+
+@mcp.tool()
+def delete_macro(ctx: Context, name: str) -> dict:
+    """Discard a previously recorded macro by name."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("delete_macro", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"delete_macro failed: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY 18 — Sessions
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def save_workspace(ctx: Context, path: str) -> dict:
+    """Persist the current GIMP workspace as a multi-image XCF bundle.
+
+    Saves every open image as image_N.xcf under `path` and writes a
+    manifest.json capturing file paths, dimensions, and layer visibility.
+
+    Returns: {path, images, manifest}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("save_workspace", {"path": path})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"save_workspace failed: {e}")
+
+
+@mcp.tool()
+def load_workspace(ctx: Context, path: str) -> dict:
+    """Restore a workspace saved by save_workspace.
+
+    Returns: {loaded, images}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("load_workspace", {"path": path})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"load_workspace failed: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CATEGORY 15 — Guides / Grid / Sample Points
 # ─────────────────────────────────────────────────────────────────────────────
 
