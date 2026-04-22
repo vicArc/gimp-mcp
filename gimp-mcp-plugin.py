@@ -2045,7 +2045,7 @@ class MCPPlugin(Gimp.PlugIn):
                         new_w = max(1, int(lyr_w * scale))
                         new_h = max(1, int(lyr_h * scale))
                         new_layer.scale(new_w, new_h, False)
-                        new_layer.translate((img_w - new_w) // 2, (img_h - new_h) // 2)
+                        new_layer.transform_translate((img_w - new_w) // 2, (img_h - new_h) // 2)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -2527,21 +2527,33 @@ class MCPPlugin(Gimp.PlugIn):
             return self._err_response(e)
 
     def _run_script_fu(self, params):
-        """Execute a Script-Fu snippet via gimp-script-fu-eval.
+        """Execute a Script-Fu snippet via script-fu-eval.
 
-        Script-Fu is still supported in 3.2 through the PDB procedure
-        gimp-script-fu-eval. Useful for quick one-liners against legacy
-        Scheme-based tooling without leaving Python.
+        The script-fu-eval PDB procedure is part of the optional Script-Fu
+        extension, which is not installed on all GIMP 3.2.2 builds
+        (e.g. the Windows installer). This implementation probes for the
+        procedure and returns a structured 'not available' if it is
+        absent, preserving the API shape so scripts keep working on
+        builds that do ship Script-Fu.
         """
         try:
             code = params.get("script") or params.get("code") or ""
             if not code:
                 return {"status": "error", "error": "run_script_fu: 'script' is required"}
             pdb  = Gimp.get_pdb()
-            proc = pdb.lookup_procedure("script-fu-eval") or pdb.lookup_procedure("gimp-script-fu-eval")
+            proc = None
+            for proc_name in ("script-fu-eval", "extension-script-fu-eval",
+                              "plug-in-script-fu-eval"):
+                proc = pdb.lookup_procedure(proc_name)
+                if proc is not None:
+                    break
             if proc is None:
                 return {"status": "error",
-                        "error": "script-fu-eval not available in this GIMP build"}
+                        "error": "run_script_fu: script-fu extension is not installed "
+                                 "in this GIMP build (no script-fu-eval / "
+                                 "extension-script-fu-eval PDB proc available). "
+                                 "Use run_pdb_procedure for per-proc invocations or "
+                                 "the exec escape hatch for ad-hoc Python."}
             cfg = proc.create_config()
             try: cfg.set_property("run-mode", Gimp.RunMode.NONINTERACTIVE)
             except Exception: pass
@@ -3406,11 +3418,18 @@ class MCPPlugin(Gimp.PlugIn):
                             res = sampled.get_pixel(xx, yy)
                         except Exception:
                             continue
-                        # get_pixel returns (num_channels, [values])
-                        if isinstance(res, tuple) and len(res) >= 2:
-                            chans = res[1] or []
-                        else:
-                            chans = list(res or [])
+                        # GIMP 3.2 returns a Gegl.Color from get_pixel; its
+                        # .get_rgba() yields floats in 0..1.
+                        try:
+                            rgba = res.get_rgba()
+                            chans = [rgba[0] * 255, rgba[1] * 255, rgba[2] * 255,
+                                     rgba[3] * 255 if len(rgba) > 3 else 255]
+                        except Exception:
+                            # Fallback for older (num_channels, values) tuple shape
+                            if isinstance(res, tuple) and len(res) >= 2:
+                                chans = list(res[1] or [])
+                            else:
+                                chans = list(res or [])
                         if len(chans) < 3:
                             continue
                         if ignore_alpha and len(chans) >= 4 and chans[3] < 10:
@@ -3911,7 +3930,7 @@ class MCPPlugin(Gimp.PlugIn):
                 try: offs = drawable.get_offsets()
                 except Exception: offs = None
                 if isinstance(offs, tuple) and len(offs) >= 3:
-                    overlay.translate(int(offs[1]), int(offs[2]))
+                    overlay.transform_translate(int(offs[1]), int(offs[2]))
                 Gimp.context_push()
                 try:
                     Gimp.context_set_foreground(Gegl.Color.new(color_str))
@@ -5293,7 +5312,7 @@ class MCPPlugin(Gimp.PlugIn):
                 if offset_x is not None or offset_y is not None:
                     dx = int(offset_x) if offset_x is not None else 0
                     dy = int(offset_y) if offset_y is not None else 0
-                    layer.translate(dx, dy)
+                    layer.transform_translate(dx, dy)
             finally:
                 image.undo_group_end()
 
@@ -5676,19 +5695,19 @@ class MCPPlugin(Gimp.PlugIn):
         except Exception as e:
             return self._err_response(e)
 
-    # Map tool name → (PDB procedure name). All paint-tool defaults take just
-    # (drawable, strokes) in GIMP 3.2 — dynamics/brush/color come from context.
-    _PAINT_TOOL_PDB = {
-        "paintbrush":  "gimp-paintbrush-default",
-        "pencil":      "gimp-pencil",
-        "airbrush":    "gimp-airbrush-default",
-        "smudge":      "gimp-smudge-default",
-        "eraser":      "gimp-eraser-default",
-        "dodge":       "gimp-dodgeburn-default",
-        "burn":        "gimp-dodgeburn-default",
-        "convolve":    "gimp-convolve-default",
-        "ink":         "gimp-ink",
-        "mypaint":     "gimp-mypaint-brush-default",
+    # Map tool name → the Gimp module-level function that dispatches the stroke.
+    # These direct bindings auto-marshal the Python list of floats into
+    # GimpDoubleArray (config-based proc.run does not).
+    _PAINT_TOOL_FN = {
+        "paintbrush": "paintbrush_default",
+        "pencil":     "pencil",
+        "airbrush":   "airbrush_default",
+        "smudge":     "smudge_default",
+        "eraser":     "eraser_default",
+        "dodge":      "dodgeburn_default",
+        "burn":       "dodgeburn_default",
+        "convolve":   "convolve_default",
+        # ink / mypaint: no module-level function on 3.2.2; not dispatchable here
     }
 
     def _apply_paint_context(self, brush, size, hardness, opacity, dynamics, color, mode, dodgeburn_type):
@@ -5765,19 +5784,24 @@ class MCPPlugin(Gimp.PlugIn):
                 return {"status": "error",
                         "error": f"paint_stroke: non-numeric stroke value ({conv_err})"}
 
-            pdb_name = self._PAINT_TOOL_PDB.get(tool)
-            if pdb_name is None:
+            if tool in ("ink", "mypaint"):
                 return {"status": "error",
-                        "error": f"paint_stroke: unknown tool '{tool}'. Valid: {sorted(self._PAINT_TOOL_PDB)}"}
+                        "error": f"paint_stroke: tool '{tool}' is not available as a "
+                                 f"module-level binding in GIMP 3.2.2. Use paintbrush "
+                                 f"or another supported tool."}
+
+            fn_name = self._PAINT_TOOL_FN.get(tool)
+            if fn_name is None:
+                return {"status": "error",
+                        "error": f"paint_stroke: unknown tool '{tool}'. "
+                                 f"Valid: {sorted(self._PAINT_TOOL_FN)} + ink + mypaint"}
+            fn = getattr(Gimp, fn_name, None)
+            if fn is None:
+                return {"status": "error",
+                        "error": f"paint_stroke: Gimp.{fn_name} not available in this build"}
 
             image    = self._get_image(image_index)
             drawable = self._resolve_layer(image, layer_name, None)
-
-            pdb  = Gimp.get_pdb()
-            proc = pdb.lookup_procedure(pdb_name)
-            if proc is None:
-                return {"status": "error",
-                        "error": f"paint_stroke: PDB procedure not available in this GIMP build: {pdb_name}"}
 
             dodgeburn_type = tool if tool in ("dodge", "burn") else None
 
@@ -5786,14 +5810,7 @@ class MCPPlugin(Gimp.PlugIn):
             try:
                 self._apply_paint_context(brush, size, hardness, opacity,
                                           dynamics, color, mode, dodgeburn_type)
-                if tool == "ink" and size is not None:
-                    try: Gimp.context_set_ink_size(float(size))
-                    except Exception: pass
-
-                cfg = proc.create_config()
-                cfg.set_property("drawable", drawable)
-                cfg.set_property("strokes",  strokes)
-                proc.run(cfg)
+                fn(drawable, strokes)
             finally:
                 Gimp.context_pop()
                 image.undo_group_end()
@@ -5802,7 +5819,7 @@ class MCPPlugin(Gimp.PlugIn):
             return {"status": "success", "results": {
                 "status":       "success",
                 "tool":         tool,
-                "pdb":          pdb_name,
+                "binding":      f"Gimp.{fn_name}",
                 "stroke_count": len(strokes) // 2,
                 "layer_name":   drawable.get_name(),
             }}
@@ -6518,7 +6535,7 @@ class MCPPlugin(Gimp.PlugIn):
             sheet_w = cols * frame_w + (cols - 1) * padding
             sheet_h = rows * frame_h + (rows - 1) * padding
 
-            sheet = Gimp.Image.new(sheet_w, sheet_h, Gimp.ImageBaseType.RGBA)
+            sheet = Gimp.Image.new(sheet_w, sheet_h, Gimp.ImageBaseType.RGB)
             bg_layer = Gimp.Layer.new(sheet, "Background", sheet_w, sheet_h, Gimp.ImageType.RGBA_IMAGE, 100, Gimp.LayerMode.NORMAL)
             sheet.insert_layer(bg_layer, None, 0)
             Gimp.context_set_background(Gegl.Color.new("transparent"))
@@ -7346,41 +7363,21 @@ class MCPPlugin(Gimp.PlugIn):
     def _selection_to_path(self, params):
         """Convert the current selection to a path via plug-in-sel2path.
 
-        Uses GIMP's built-in selection-to-path plug-in with its default
-        tuning. Callers that need finer control can drive the procedure
-        directly via apply_filter / call_api.
+        The proc exists but its `drawables` property is typed as
+        `GimpCoreObjectArray`, and PyGObject in GIMP 3.2.2 does not
+        auto-marshal a Python list of Layer objects into that boxed array
+        type (the set_property call raises a conversion error). Until the
+        binding gap is closed, this tool returns a structured 'not
+        available' response so callers don't get a cryptic GObject error.
+        Workaround: build paths yourself via path_create from selection
+        bounds, or drop to raw Script-Fu if it becomes available.
         """
-        try:
-            image_index = int(params.get("image_index", 0))
-            image = self._get_image(image_index)
-            layers = image.get_layers() or []
-            drawable = (image.get_selected_layers() or layers or [None])[0]
-            if drawable is None:
-                return {"status": "error", "error": "selection_to_path: image has no layers"}
-
-            paths_before = {p.get_id() for p in (image.get_paths() or [])}
-            pdb  = Gimp.get_pdb()
-            proc = pdb.lookup_procedure("plug-in-sel2path")
-            if proc is None:
-                return {"status": "error", "error": "plug-in-sel2path not available"}
-            image.undo_group_start()
-            try:
-                cfg = proc.create_config()
-                cfg.set_property("run-mode",  Gimp.RunMode.NONINTERACTIVE)
-                cfg.set_property("image",     image)
-                cfg.set_property("drawables", [drawable])
-                proc.run(cfg)
-            finally:
-                image.undo_group_end()
-            new_paths = [p for p in (image.get_paths() or []) if p.get_id() not in paths_before]
-            Gimp.displays_flush()
-            return {"status": "success", "results": {
-                "status":    "success",
-                "new_paths": [{"id": p.get_id(), "name": p.get_name()} for p in new_paths],
-                "count":     len(new_paths),
-            }}
-        except Exception as e:
-            return self._err_response(e)
+        _ = params
+        return {"status": "error",
+                "error": "selection_to_path: plug-in-sel2path's drawables arg is a "
+                         "GimpCoreObjectArray and the 3.2.2 PyGObject binding can't "
+                         "marshal a Python list into it. Workaround: use path_create "
+                         "with explicit points derived from get_selection_bounds."}
 
     def _export_path_as_svg(self, params):
         """Export a named path to an SVG file via gimp-image-export-path-to-file."""
