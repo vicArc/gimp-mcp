@@ -4994,16 +4994,19 @@ def get_pixel_color(
 
 
 @mcp.tool()
-def batch(
+async def batch(
     ctx: Context,
     operations: list,
     stop_on_error: bool = True,
 ) -> dict:
-    """Execute a pipeline of tool calls in one round-trip.
+    """Execute a pipeline of tool calls with per-op progress events.
 
     Each entry in `operations` is {"type": "<tool-name>", "params": {...}}.
-    Sub-calls are dispatched through the same code path as direct requests.
-    Nested batches are rejected.
+    Sub-calls are dispatched through the same plugin dispatcher as direct
+    requests, one socket round-trip per op. After each sub-op the tool
+    emits a progress event via ctx.report_progress (if the MCP transport
+    carries a progress token) plus an informational log line via ctx.info,
+    so MCP clients can surface live progress for long pipelines.
 
     Parameters:
     - operations: List of {type, params} dicts
@@ -5013,18 +5016,62 @@ def batch(
     Returns: {total, executed, successes, failures,
               results: [{op_index, op_type, status, ...}, ...]}
     """
-    try:
-        conn = get_gimp_connection()
-        result = conn.send_command("batch", {
-            "operations":    operations,
-            "stop_on_error": stop_on_error,
-        })
-        if result["status"] == "success":
-            return result["results"]
-        raise Exception(result.get("error", "Unknown error"))
-    except Exception as e:
-        traceback.print_exc()
-        raise Exception(f"batch failed: {e}")
+    if not isinstance(operations, list):
+        raise Exception("batch: 'operations' must be a list")
+    if any(isinstance(op, dict) and op.get("type") == "batch" for op in operations):
+        raise Exception("batch: nested batch operations are not supported")
+
+    total = len(operations)
+    conn = get_gimp_connection()
+    results = []
+
+    async def _report(progress, message):
+        try:
+            await ctx.info(f"batch {progress}/{total}: {message}")
+        except Exception:
+            pass
+        try:
+            await ctx.report_progress(progress, total)
+        except Exception:
+            pass
+
+    for i, op in enumerate(operations):
+        if not isinstance(op, dict) or "type" not in op:
+            entry = {"status": "error",
+                     "error":  f"operation #{i} is missing 'type'",
+                     "op_index": i}
+            results.append(entry)
+            await _report(i + 1, "skipped (missing type)")
+            if stop_on_error:
+                break
+            continue
+
+        op_type = op["type"]
+        try:
+            r = conn.send_command(op_type, op.get("params") or {})
+        except Exception as e:
+            traceback.print_exc()
+            r = {"status": "error", "error": str(e),
+                 "error_type": type(e).__name__,
+                 "error_message": str(e)}
+
+        entry = dict(r) if isinstance(r, dict) else {"status": "success", "result": r}
+        entry["op_index"] = i
+        entry["op_type"]  = op_type
+        results.append(entry)
+
+        await _report(i + 1, f"{op_type} {entry.get('status')}")
+        if stop_on_error and entry.get("status") != "success":
+            break
+
+    successes = sum(1 for r in results if r.get("status") == "success")
+    return {
+        "total":     total,
+        "executed":  len(results),
+        "successes": successes,
+        "failures":  len(results) - successes,
+        "results":   results,
+    }
 
 
 @mcp.tool()
