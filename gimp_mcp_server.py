@@ -732,6 +732,191 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
 
 
 @mcp.tool()
+def list_brushes(ctx: Context, filter: str = "") -> dict:
+    """List installed brushes.
+
+    Parameters:
+    - filter: Substring filter passed to gimp-brushes-get-list
+
+    Returns: {count, filter, brushes}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_brushes", {"filter": filter})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_brushes failed: {e}")
+
+
+@mcp.tool()
+def list_dynamics(ctx: Context, filter: str = "") -> dict:
+    """List available dynamics presets.
+
+    GIMP 3.2 does not expose a full dynamics-list API via the Python
+    binding; this falls back to querying the PDB and, failing that,
+    returns the currently active dynamics name only.
+
+    Parameters:
+    - filter: Substring filter (may be ignored by the PDB implementation)
+
+    Returns: {count, dynamics, note}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_dynamics", {"filter": filter})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_dynamics failed: {e}")
+
+
+@mcp.tool()
+def list_patterns(ctx: Context, filter: str = "") -> dict:
+    """List installed patterns.
+
+    Returns: {count, filter, patterns}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_patterns", {"filter": filter})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_patterns failed: {e}")
+
+
+@mcp.tool()
+def list_gradients(ctx: Context, filter: str = "") -> dict:
+    """List installed gradients.
+
+    Returns: {count, filter, gradients}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_gradients", {"filter": filter})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_gradients failed: {e}")
+
+
+@mcp.tool()
+def list_pdb_procedures(ctx: Context, filter: str = "") -> dict:
+    """List PDB procedure names matching a substring filter.
+
+    Uses gimp-pdb-query with a permissive match across every non-name
+    field — useful for discovery when you know part of a proc name.
+
+    Parameters:
+    - filter: Regex / substring applied to proc names (default "" = all)
+
+    Returns: {filter, count, procedures}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_pdb_procedures", {"filter": filter})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_pdb_procedures failed: {e}")
+
+
+@mcp.tool()
+def create_brush_from_selection(ctx: Context, name: str, image_index: int = 0) -> dict:
+    """Create a new brush from the current selection of the active drawable.
+
+    GIMP 3.2 does not expose a direct PDB procedure for this — returns a
+    structured "not available" error pointing at the recommended workflow
+    (export selection as .gbr to the user brushes folder). API shape
+    preserved for future builds.
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("create_brush_from_selection", {
+            "name":        name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"create_brush_from_selection failed: {e}")
+
+
+@mcp.tool()
+def create_pattern_from_selection(ctx: Context, name: str, image_index: int = 0) -> dict:
+    """Create a new pattern from the current selection of the active drawable.
+
+    API shape shipped; GIMP 3.2 has no direct PDB proc so this returns a
+    structured "not available" error (see create_brush_from_selection).
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("create_pattern_from_selection", {
+            "name":        name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"create_pattern_from_selection failed: {e}")
+
+
+@mcp.tool()
+def delete_brush(ctx: Context, name: str) -> dict:
+    """Delete a named brush via gimp-brush-delete.
+
+    Parameters:
+    - name: Brush name
+
+    Returns: {name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("delete_brush", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"delete_brush failed: {e}")
+
+
+@mcp.tool()
+def delete_pattern(ctx: Context, name: str) -> dict:
+    """Delete a named pattern via gimp-pattern-delete.
+
+    Parameters:
+    - name: Pattern name
+
+    Returns: {name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("delete_pattern", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"delete_pattern failed: {e}")
+
+
+@mcp.tool()
 def apply_color_profile(
     ctx: Context,
     profile_path: str,

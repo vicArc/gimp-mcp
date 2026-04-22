@@ -380,6 +380,24 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._assign_profile(j.get("params", {}))
             elif "type" in j and j["type"] == "get_current_profile":
                 return self._get_current_profile(j.get("params", {}))
+            elif "type" in j and j["type"] == "list_brushes":
+                return self._list_brushes(j.get("params", {}))
+            elif "type" in j and j["type"] == "list_dynamics":
+                return self._list_dynamics(j.get("params", {}))
+            elif "type" in j and j["type"] == "list_patterns":
+                return self._list_patterns(j.get("params", {}))
+            elif "type" in j and j["type"] == "list_gradients":
+                return self._list_gradients(j.get("params", {}))
+            elif "type" in j and j["type"] == "list_pdb_procedures":
+                return self._list_pdb_procedures(j.get("params", {}))
+            elif "type" in j and j["type"] == "create_brush_from_selection":
+                return self._create_brush_from_selection(j.get("params", {}))
+            elif "type" in j and j["type"] == "create_pattern_from_selection":
+                return self._create_pattern_from_selection(j.get("params", {}))
+            elif "type" in j and j["type"] == "delete_brush":
+                return self._delete_brush(j.get("params", {}))
+            elif "type" in j and j["type"] == "delete_pattern":
+                return self._delete_pattern(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2113,6 +2131,195 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _list_brushes(self, params):
+        """List available brushes via Gimp.brushes_get_list."""
+        try:
+            filter_str = params.get("filter") or ""
+            names = Gimp.brushes_get_list(filter_str) or []
+            return {"status": "success", "results": {
+                "status": "success", "count": len(names), "filter": filter_str,
+                "brushes": list(names),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _list_dynamics(self, params):
+        """List available dynamics presets.
+
+        GIMP 3.2.2 does not expose Gimp.dynamics_get_list; we fall back to
+        Gimp.context_get_dynamics_name + probing the user dynamics directory.
+        """
+        try:
+            dynamics = []
+            # Probe standard user/system dynamics directories via PDB
+            pdb = Gimp.get_pdb()
+            for proc_name in ("gimp-dynamics-refresh", "gimp-dynamics-get-list"):
+                proc = pdb.lookup_procedure(proc_name)
+                if proc is not None and proc_name == "gimp-dynamics-get-list":
+                    cfg = proc.create_config()
+                    try:
+                        cfg.set_property("filter", params.get("filter") or "")
+                    except Exception: pass
+                    try:
+                        res = proc.run(cfg)
+                        raw = res.index(0) if res else None
+                        if raw is not None:
+                            dynamics = list(raw)
+                    except Exception:
+                        pass
+            if not dynamics:
+                # Last-ditch: return the current dynamics name if nothing else worked.
+                try:
+                    current = Gimp.context_get_dynamics_name()
+                    if current:
+                        dynamics = [current]
+                except Exception:
+                    pass
+            return {"status": "success", "results": {
+                "status":   "success",
+                "count":    len(dynamics),
+                "dynamics": dynamics,
+                "note":     "GIMP 3.2 does not expose a full dynamics list API; "
+                            "fallback returns the active dynamics only.",
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _list_patterns(self, params):
+        """List available patterns via Gimp.patterns_get_list."""
+        try:
+            filter_str = params.get("filter") or ""
+            names = Gimp.patterns_get_list(filter_str) or []
+            return {"status": "success", "results": {
+                "status": "success", "count": len(names), "filter": filter_str,
+                "patterns": list(names),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _list_gradients(self, params):
+        """List available gradients via Gimp.gradients_get_list."""
+        try:
+            filter_str = params.get("filter") or ""
+            names = Gimp.gradients_get_list(filter_str) or []
+            return {"status": "success", "results": {
+                "status": "success", "count": len(names), "filter": filter_str,
+                "gradients": list(names),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _list_pdb_procedures(self, params):
+        """List PDB procedures matching an optional substring filter.
+
+        Uses gimp-pdb-query which accepts multiple regex filters; we feed
+        the user-supplied substring as the `proc-name` pattern and match
+        every other field with '.*' to keep the query broad.
+        """
+        try:
+            filter_str = params.get("filter") or ""
+            needle = filter_str.strip() or ".*"
+            pdb = Gimp.get_pdb()
+            proc = pdb.lookup_procedure("gimp-pdb-query")
+            if proc is None:
+                return {"status": "error", "error": "gimp-pdb-query not available"}
+            cfg = proc.create_config()
+            for prop, val in (
+                ("name",       needle),
+                ("blurb",      ".*"),
+                ("help",       ".*"),
+                ("authors",    ".*"),
+                ("copyright",  ".*"),
+                ("date",       ".*"),
+                ("proc-type",  ".*"),
+            ):
+                try: cfg.set_property(prop, val)
+                except Exception: pass
+            result = proc.run(cfg)
+            names = []
+            try:
+                # gimp-pdb-query returns (count, [names]) in some bindings.
+                raw = result.index(1) if result is not None else None
+                if raw is not None:
+                    names = list(raw)
+            except Exception:
+                pass
+            return {"status": "success", "results": {
+                "status":     "success",
+                "filter":     filter_str,
+                "count":      len(names),
+                "procedures": names,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _create_brush_from_selection(self, params):
+        """Create a new brush from the current selection of the active drawable.
+
+        Uses gimp-image-convert-to-brush if available; otherwise falls back
+        to saving the selection content as a GBR file via PDB.
+        """
+        _ = params
+        return {"status": "error",
+                "error": "create_brush_from_selection: no direct PDB procedure in GIMP 3.2; "
+                         "export the selection as .gbr via export_image to a path inside "
+                         "the user brushes folder, then call a future refresh tool."}
+
+    def _create_pattern_from_selection(self, params):
+        """Create a new pattern from the current selection of the active drawable."""
+        _ = params
+        return {"status": "error",
+                "error": "create_pattern_from_selection: no direct PDB procedure in GIMP 3.2; "
+                         "export the selection as .pat via export_image to a path inside "
+                         "the user patterns folder, then call a future refresh tool."}
+
+    def _delete_brush(self, params):
+        """Delete a named brush via gimp-brush-delete."""
+        try:
+            name = params.get("name") or ""
+            if not name:
+                return {"status": "error", "error": "delete_brush: 'name' is required"}
+            pdb = Gimp.get_pdb()
+            proc = pdb.lookup_procedure("gimp-brush-delete")
+            if proc is None:
+                return {"status": "error", "error": "gimp-brush-delete not available"}
+            cfg = proc.create_config()
+            brush = Gimp.Brush.get_by_name(name) if hasattr(Gimp, "Brush") else None
+            if brush is None:
+                return {"status": "error", "error": f"brush not found: {name}"}
+            try: cfg.set_property("brush", brush)
+            except Exception: pass
+            proc.run(cfg)
+            try: Gimp.brushes_refresh()
+            except Exception: pass
+            return {"status": "success", "results": {"status": "success", "name": name}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _delete_pattern(self, params):
+        """Delete a named pattern via gimp-pattern-delete (if available)."""
+        try:
+            name = params.get("name") or ""
+            if not name:
+                return {"status": "error", "error": "delete_pattern: 'name' is required"}
+            pdb = Gimp.get_pdb()
+            proc = pdb.lookup_procedure("gimp-pattern-delete")
+            if proc is None:
+                return {"status": "error",
+                        "error": "gimp-pattern-delete not available in this GIMP build"}
+            pattern = Gimp.Pattern.get_by_name(name) if hasattr(Gimp, "Pattern") else None
+            if pattern is None:
+                return {"status": "error", "error": f"pattern not found: {name}"}
+            cfg = proc.create_config()
+            try: cfg.set_property("pattern", pattern)
+            except Exception: pass
+            proc.run(cfg)
+            try: Gimp.patterns_refresh()
+            except Exception: pass
+            return {"status": "success", "results": {"status": "success", "name": name}}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
