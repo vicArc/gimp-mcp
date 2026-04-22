@@ -1790,6 +1790,24 @@ class MCPPlugin(Gimp.PlugIn):
     # SHARED HELPERS
     # =========================================================================
 
+    def _err_response(self, exc, code=None):
+        """Build a structured error response from an exception.
+
+        Keeps the legacy `error` string for back-compat with callers that
+        only read that field, and adds `error_type` (exception class name),
+        `error_message` (same as error), `error_code` (optional category),
+        and `traceback` on top.
+        """
+        message = str(exc)
+        return {
+            "status":        "error",
+            "error":         message,
+            "error_type":    type(exc).__name__,
+            "error_message": message,
+            "error_code":    code,
+            "traceback":     traceback.format_exc(),
+        }
+
     def _get_image(self, image_index):
         """Return the image at image_index from Gimp.get_images(), raise if none open."""
         images = Gimp.get_images()
@@ -1985,7 +2003,7 @@ class MCPPlugin(Gimp.PlugIn):
                 }
             }
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _load_image_as_layer(self, params):
         """Import an external image as a new layer in an existing image.
@@ -2039,7 +2057,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "height":     new_layer.get_height(),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _duplicate_image(self, params):
         """Duplicate an image, attach a display, return the new image's index."""
@@ -2062,7 +2080,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "source_image_id": image.get_id(),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _save_xcf(self, params):
         """Save image as XCF."""
@@ -2083,7 +2101,7 @@ class MCPPlugin(Gimp.PlugIn):
                 Gimp.file_overwrite(Gimp.RunMode.NONINTERACTIVE, image, gio_file)
             return {"status": "success", "results": {"status": "success", "file_path": file_path}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _export_image(self, params):
         """Export image to raster format, optionally with format-specific knobs."""
@@ -2118,7 +2136,7 @@ class MCPPlugin(Gimp.PlugIn):
                 }
             }
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _batch_export(self, params):
         """Export all (or one) open images to output_dir."""
@@ -2162,7 +2180,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "results": {"exported": exported, "count": len(exported), "errors": errors}
             }
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 2 — Image Adjustments
@@ -2201,7 +2219,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 16 — Extended Export / Clipboard
@@ -2247,7 +2265,7 @@ class MCPPlugin(Gimp.PlugIn):
                     "status": "success", "pasted": bool(pasted_n),
                 }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _copy_selection_to_clipboard(self, params):
         """Copy the current selection (from the active drawable) to the clipboard."""
@@ -2258,7 +2276,7 @@ class MCPPlugin(Gimp.PlugIn):
             ok = Gimp.edit_copy([drawable])
             return {"status": "success", "results": {"status": "success", "copied": bool(ok)}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _copy_layer_to_clipboard(self, params):
         """Copy an entire named layer to the clipboard."""
@@ -2272,7 +2290,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "copied": bool(ok), "layer_name": layer.get_name(),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _export_via_fmt(self, params, fmt, extra_params=None):
         """Shared helper: route _export_image for a specific format + extra props."""
@@ -2302,7 +2320,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "file_size_bytes": size, "lossless": lossless, "animation": animation,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _export_psd(self, params):
         """Export as PSD (layered) via gimp-file-save equivalent.
@@ -2324,7 +2342,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "file_path": file_path, "file_size_bytes": size,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _import_psd(self, params):
         """Load a PSD file as a new image via Gimp.file_load."""
@@ -2347,7 +2365,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "num_layers": len(image.get_layers()),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _export_tiff(self, params):
         """Export as TIFF with optional compression property."""
@@ -2369,7 +2387,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "file_size_bytes": size, "compression": compression,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _export_hdr(self, params):
         """Export as Radiance HDR via Gimp.file_save (.hdr extension drives format)."""
@@ -2386,7 +2404,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "file_path": file_path, "file_size_bytes": size,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _export_exr(self, params):
         """Export as OpenEXR via Gimp.file_save (.exr extension drives format)."""
@@ -2405,7 +2423,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "file_size_bytes": size, "half_float": half_float,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _export_gif_animation(self, params):
         """Export the current image as an animated GIF.
@@ -2450,7 +2468,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "loop_count": loop_count, "dither": dither,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _export_animated_sprite_strip(self, params):
         """Export the active image's layers as a horizontal/vertical sprite strip.
@@ -2467,7 +2485,7 @@ class MCPPlugin(Gimp.PlugIn):
                 p["rows"] = 1
             return self._export_sprite_sheet(p)
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 17 — Scripting / Macros
@@ -2506,7 +2524,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "ran":      True,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _run_script_fu(self, params):
         """Execute a Script-Fu snippet via gimp-script-fu-eval.
@@ -2536,7 +2554,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "executed_chars": len(code),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _record_macro(self, params):
         """Start capturing subsequent tool calls into a named macro.
@@ -2648,7 +2666,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "images": len(images), "manifest": manifest_path,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _load_workspace(self, params):
         """Restore a workspace saved by _save_workspace."""
@@ -2679,7 +2697,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "images":  loaded,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 15 — Guides / Grid / Sample Points
@@ -2707,7 +2725,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "position":    position,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _list_guides(self, params):
         """Iterate the image's guides via find_next_guide."""
@@ -2734,7 +2752,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "count": len(guides), "guides": guides,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _remove_guide(self, params):
         """Delete a specific guide by id."""
@@ -2746,7 +2764,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success", "guide_id": guide_id}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _remove_all_guides(self, params):
         """Iterate the image's guides and delete each one."""
@@ -2765,7 +2783,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "removed": removed,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _set_grid(self, params):
         """Set grid spacing / offset / style / foreground color."""
@@ -2801,7 +2819,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _get_grid(self, params):
         """Read grid spacing / offset / style / color."""
@@ -2827,7 +2845,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "foreground": self._color_to_hex(fg_color),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _toggle_grid_visible(self, _params):
         return {"status": "error",
@@ -2863,7 +2881,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "sample_point_id": int(sp_id), "x": x, "y": y,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _list_sample_points(self, params):
         """Iterate sample points via find_next_sample_point."""
@@ -2889,7 +2907,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "count": len(points), "sample_points": points,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _remove_sample_point(self, params):
         """Delete a specific sample point by id."""
@@ -2903,7 +2921,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "sample_point_id": sp_id,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _resource_names(self, entries):
         """Normalize a Gimp.*_get_list return into a list of name strings.
@@ -2930,7 +2948,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "brushes": names,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _list_dynamics(self, params):
         """List available dynamics presets.
@@ -2972,7 +2990,7 @@ class MCPPlugin(Gimp.PlugIn):
                             "fallback returns the active dynamics only.",
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _list_patterns(self, params):
         """List available patterns via Gimp.patterns_get_list."""
@@ -2984,7 +3002,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "patterns": names,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _list_gradients(self, params):
         """List available gradients via Gimp.gradients_get_list."""
@@ -2996,7 +3014,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "gradients": names,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _list_pdb_procedures(self, params):
         """List PDB procedures matching an optional substring filter.
@@ -3040,7 +3058,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "procedures": names,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _create_brush_from_selection(self, params):
         """Create a new brush from the current selection of the active drawable.
@@ -3083,7 +3101,7 @@ class MCPPlugin(Gimp.PlugIn):
             except Exception: pass
             return {"status": "success", "results": {"status": "success", "name": name}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _delete_pattern(self, params):
         """Delete a named pattern via gimp-pattern-delete (if available)."""
@@ -3107,7 +3125,7 @@ class MCPPlugin(Gimp.PlugIn):
             except Exception: pass
             return {"status": "success", "results": {"status": "success", "name": name}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _load_icc_bytes(self, file_path):
         """Read ICC profile bytes from disk. Raises FileNotFoundError if missing."""
@@ -3153,7 +3171,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "intent":       intent_str,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _assign_profile(self, params):
         """Tag an image with a new ICC profile without converting pixels."""
@@ -3171,7 +3189,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "profile_path": profile_path,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _get_current_profile(self, params):
         """Return the ICC profile currently tagged on the image.
@@ -3217,7 +3235,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "size_bytes":  size,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _load_palette(self, params):
         """Load a GIMP .gpl palette file and install it as a named palette.
@@ -3277,7 +3295,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "source":       file_path,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _save_palette(self, params):
         """Create a new palette with the given name and list of colors."""
@@ -3309,7 +3327,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "entries":      len(colors),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _list_palettes(self, params):
         """List palette names via Gimp.palettes_get_list."""
@@ -3324,7 +3342,7 @@ class MCPPlugin(Gimp.PlugIn):
                         "palettes": names,
                     }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _get_palette_color(self, params):
         """Return one specific color from a named palette by index."""
@@ -3348,7 +3366,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "hex":          hex_color,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _get_dominant_colors(self, params):
         """Extract top-k dominant colors from a layer via downsample + bucket-count.
@@ -3422,7 +3440,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "colors":      colors,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _get_average_color(self, params):
         """Sample mean RGBA in a rectangular region of a layer.
@@ -3477,7 +3495,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "hex":         hex_color,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _set_background(self, params):
         """Set the paint-context background color."""
@@ -3491,7 +3509,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "color": color_str,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _swap_colors(self, _params):
         """Swap the paint-context foreground and background colors."""
@@ -3499,7 +3517,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.context_swap_colors()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _set_foreground(self, params):
         """Set the paint-context foreground color."""
@@ -3513,7 +3531,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "color": color_str,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_seamless_tile(self, params):
         """Apply gegl:tile-seamless to make a texture tile seamlessly."""
@@ -3532,7 +3550,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "layer_name": drawable.get_name(),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_waterpixels(self, params):
         """Apply gegl:waterpixels — superpixel segmentation into flat regions."""
@@ -3557,7 +3575,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "size": size, "smoothness": smoothness,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_cartoon(self, params):
         """Apply gegl:cartoon — cartoon edge + darken effect."""
@@ -3582,7 +3600,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "mask_radius": mask_radius, "pct_black": pct_black,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_oilify(self, params):
         """Apply gegl:oilify — painterly smoothing filter."""
@@ -3605,7 +3623,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "mask_radius": mask_radius,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_displacement(self, params):
         """Apply gegl:displace using named layers as x/y displacement maps."""
@@ -3655,7 +3673,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "edge_behavior": edge_behavior,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_bump_map(self, params):
         """Apply gegl:bump-map using a named layer as the height source."""
@@ -3692,7 +3710,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "depth":     depth,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_color_to_alpha(self, params):
         """Apply gegl:color-to-alpha — drop a color out of the layer as transparency."""
@@ -3722,7 +3740,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "opacity_threshold":      opacity_threshold,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_despeckle(self, params):
         """Despeckle / noise reduction.
@@ -3753,7 +3771,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "radius": radius, "median": median, "iterations": iterations,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_bokeh(self, params):
         """Shaped bokeh blur.
@@ -3791,7 +3809,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "radius": radius,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_motion_blur(self, params):
         """Dispatch to gegl:motion-blur-{linear|circular|zoom} by type."""
@@ -3832,7 +3850,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "type": blur_type, "length": length, "angle": angle,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_unsharp_mask(self, params):
         """Apply gegl:unsharp-mask to a layer."""
@@ -3859,7 +3877,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "radius": radius, "amount": amount, "threshold": threshold,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _photo_filter(self, params):
         """Warming/cooling overlay approximation.
@@ -3914,7 +3932,7 @@ class MCPPlugin(Gimp.PlugIn):
                         "GIMP 3.2 has no dedicated gegl:photo-filter op.",
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _black_and_white(self, params):
         """Channel-mixed BW conversion using gegl:channel-mixer + desaturate.
@@ -3967,7 +3985,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "cyan": cyan, "blue": blue, "magenta": magenta,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _shadows_highlights(self, params):
         """Apply gegl:shadows-highlights for tonal rescue."""
@@ -4001,7 +4019,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "color_correction": color_correction,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _exposure(self, params):
         """Apply gegl:exposure (stops-based) to a layer."""
@@ -4026,7 +4044,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "ev_stops": ev_stops, "black_level": black_level,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _color_temperature(self, params):
         """Apply gegl:color-temperature for warm/cool grading."""
@@ -4052,7 +4070,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "kelvin": kelvin, "tint": tint,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _posterize(self, params):
         """Apply gimp-drawable-posterize with a given level count."""
@@ -4079,7 +4097,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "layer_name": drawable.get_name(), "levels": levels,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _adjust_threshold(self, params):
         """Apply gimp-drawable-threshold to a layer."""
@@ -4119,7 +4137,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "low": low, "high": high, "channel": channel,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _adjust_levels(self, params):
         """Precise manual levels via gimp-drawable-levels.
@@ -4183,7 +4201,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "gamma":       gamma,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _adjust_curves(self, params):
         """Adjust tonal curves."""
@@ -4248,7 +4266,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _adjust_brightness_contrast(self, params):
         """Adjust brightness and contrast."""
@@ -4274,7 +4292,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _adjust_hue_saturation(self, params):
         """Adjust hue, saturation, lightness."""
@@ -4315,7 +4333,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _adjust_color_balance(self, params):
         """Adjust color balance for shadows/midtones/highlights."""
@@ -4353,7 +4371,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _sharpen(self, params):
         """Sharpen using unsharp mask."""
@@ -4388,7 +4406,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _blur(self, params):
         """Gaussian blur."""
@@ -4421,7 +4439,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _denoise(self, params):
         """Noise reduction."""
@@ -4441,7 +4459,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _desaturate(self, params):
         """Desaturate a layer."""
@@ -4474,7 +4492,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _invert_colors(self, params):
         """Invert all colors in a layer."""
@@ -4497,7 +4515,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 3 — Resize & Transform
@@ -4520,7 +4538,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success", "width": width, "height": height}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _scale_to_fit(self, params):
         """Scale image to fit within a bounding box preserving aspect ratio."""
@@ -4549,7 +4567,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success", "width": new_w, "height": new_h}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _crop_to_selection(self, params):
         """Crop image to selection bounds."""
@@ -4575,7 +4593,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _crop_to_rect(self, params):
         """Crop image to explicit rectangle."""
@@ -4594,7 +4612,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success", "x": x, "y": y, "width": width, "height": height}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _rotate_image(self, params):
         """Rotate image by angle."""
@@ -4632,7 +4650,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success", "angle": angle}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _flip_image(self, params):
         """Flip image horizontally or vertically."""
@@ -4649,7 +4667,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success", "direction": direction}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _resize_canvas(self, params):
         """Resize canvas without scaling content."""
@@ -4694,7 +4712,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success", "width": new_w, "height": new_h, "offset_x": off_x, "offset_y": off_y}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 4 — Selections
@@ -4718,7 +4736,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _select_ellipse(self, params):
         """Create an elliptical selection."""
@@ -4738,7 +4756,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _select_by_color(self, params):
         """Select by color similarity."""
@@ -4769,7 +4787,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _select_all(self, params):
         """Select entire canvas."""
@@ -4779,7 +4797,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _select_none(self, params):
         """Remove all selections."""
@@ -4789,7 +4807,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _invert_selection(self, params):
         """Invert selection."""
@@ -4799,7 +4817,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _modify_selection(self, params):
         """Grow/shrink/feather/border/sharpen selection."""
@@ -4825,7 +4843,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _fuzzy_select(self, params):
         """Fuzzy-select the contiguous-color region at a pixel.
@@ -4870,7 +4888,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "operation":     operation,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _alpha_to_selection(self, params):
         """Load a layer's alpha channel into the selection via image.select_item."""
@@ -4889,7 +4907,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "operation":  operation,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 5 — Layer Operations
@@ -5004,7 +5022,7 @@ class MCPPlugin(Gimp.PlugIn):
                 }
             }
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _duplicate_layer(self, params):
         """Duplicate a layer."""
@@ -5024,7 +5042,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"layer_name": new_layer.get_name(), "layer_id": new_layer.get_id()}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _delete_layer(self, params):
         """Delete a layer."""
@@ -5044,7 +5062,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _rename_layer(self, params):
         """Rename a layer."""
@@ -5062,7 +5080,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"old_name": prev_name, "new_name": new_name}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _set_layer_properties(self, params):
         """Set layer opacity, blend mode, and/or visibility."""
@@ -5090,7 +5108,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _reorder_layer(self, params):
         """Move a layer to a new stack position."""
@@ -5111,7 +5129,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     _ADD_MASK_TYPE_MAP = {
         "white":           "WHITE",
@@ -5172,7 +5190,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "channel":    channel,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _remove_layer_mask(self, params):
         """Apply or discard a layer's mask."""
@@ -5209,7 +5227,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "action":     action,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _add_layer_mask(self, params):
         """Create and attach a layer mask of the requested type."""
@@ -5248,7 +5266,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "mask_type":  mask_type,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _transform_layer(self, params):
         """Scale and/or translate a single layer (distinct from scale_image).
@@ -5297,7 +5315,7 @@ class MCPPlugin(Gimp.PlugIn):
                 pass
             return {"status": "success", "results": result}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _flatten_image(self, params):
         """Flatten all layers."""
@@ -5311,7 +5329,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _merge_visible_layers(self, params):
         """Merge visible layers."""
@@ -5325,7 +5343,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"layer_name": merged.get_name(), "layer_id": merged.get_id()}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _list_layers(self, params):
         """List all layers with properties."""
@@ -5351,7 +5369,7 @@ class MCPPlugin(Gimp.PlugIn):
                     layer_list.append({"index": i, "error": str(ex)})
             return {"status": "success", "results": {"layers": layer_list, "count": len(layer_list)}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 6 — Color & Paint
@@ -5380,7 +5398,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _fill_selection(self, params):
         """Fill current selection with color or transparency."""
@@ -5415,7 +5433,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _set_colors(self, params):
         """Set foreground and/or background color."""
@@ -5429,7 +5447,7 @@ class MCPPlugin(Gimp.PlugIn):
                 Gimp.context_set_background(Gegl.Color.new(bg_str))
             return {"status": "success", "results": {"foreground": fg_str, "background": bg_str}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _draw_line(self, params):
         """Draw a straight line."""
@@ -5464,7 +5482,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _draw_rectangle(self, params):
         """Draw a rectangle outline."""
@@ -5502,7 +5520,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _draw_ellipse(self, params):
         """Draw an ellipse outline."""
@@ -5540,7 +5558,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _fill_rectangle(self, params):
         """Fill a rectangular region with color."""
@@ -5568,7 +5586,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _fill_ellipse(self, params):
         """Fill an elliptical region with color."""
@@ -5596,7 +5614,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _gradient_fill(self, params):
         """Fill with a gradient using GEGL (gimp-blend was removed in GIMP 3)."""
@@ -5656,7 +5674,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # Map tool name → (PDB procedure name). All paint-tool defaults take just
     # (drawable, strokes) in GIMP 3.2 — dynamics/brush/color come from context.
@@ -5789,7 +5807,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "layer_name":   drawable.get_name(),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 7 — Text
@@ -5931,7 +5949,7 @@ class MCPPlugin(Gimp.PlugIn):
                 }
             }
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _edit_text(self, params):
         """Edit an existing text layer."""
@@ -5982,7 +6000,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _warp_region(self, params):
         """Warp / liquify a region of pixels to deform facial features.
@@ -6079,7 +6097,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"warped_vectors": len(vectors)}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _list_fonts(self, params):
         """List available fonts."""
@@ -6102,7 +6120,7 @@ class MCPPlugin(Gimp.PlugIn):
                     names.append(str(f))
             return {"status": "success", "results": {"fonts": names, "count": len(names)}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 8 — Filters & Effects
@@ -6168,7 +6186,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_gaussian_blur(self, params):
         """Apply Gaussian blur."""
@@ -6189,7 +6207,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_pixelate(self, params):
         """Apply pixelate effect."""
@@ -6210,7 +6228,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_emboss(self, params):
         """Apply emboss effect."""
@@ -6235,7 +6253,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_vignette(self, params):
         """Apply vignette effect."""
@@ -6258,7 +6276,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_noise(self, params):
         """Add noise to a layer."""
@@ -6280,7 +6298,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_filter(self, params):
         """Apply an arbitrary GEGL operation to a drawable and merge the result.
@@ -6317,7 +6335,7 @@ class MCPPlugin(Gimp.PlugIn):
                 }
             }
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 9 — Export Pipelines
@@ -6380,7 +6398,7 @@ class MCPPlugin(Gimp.PlugIn):
 
             return {"status": "success", "results": {"exported": exported, "count": len(exported), "platform": platform_str}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _export_web_optimized(self, params):
         """Export as both JPEG and PNG, return comparison."""
@@ -6426,7 +6444,7 @@ class MCPPlugin(Gimp.PlugIn):
                 }
             }
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _batch_resize(self, params):
         """Resize all open images."""
@@ -6468,7 +6486,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"results": results, "count": len(results)}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _export_sprite_sheet(self, params):
         """Combine frames into a sprite sheet."""
@@ -6539,7 +6557,7 @@ class MCPPlugin(Gimp.PlugIn):
                 }
             }
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _export_social_media_kit(self, params):
         """Export for multiple social media platforms."""
@@ -6586,7 +6604,7 @@ class MCPPlugin(Gimp.PlugIn):
 
             return {"status": "success", "results": {"exported": exported, "count": len(exported)}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 10 — Utility
@@ -6621,7 +6639,7 @@ class MCPPlugin(Gimp.PlugIn):
                     image_list.append({"index": i, "error": str(ex)})
             return {"status": "success", "results": {"images": image_list, "count": len(image_list)}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _set_active_image(self, params):
         """Raise a specific image to the front."""
@@ -6640,7 +6658,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success", "image_id": image.get_id()}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _undo(self, params):
         """Undo N steps."""
@@ -6657,7 +6675,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"steps_undone": done}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _redo(self, params):
         """Redo N steps."""
@@ -6674,7 +6692,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"steps_redone": done}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _convert_color_mode(self, params):
         """Convert image color mode."""
@@ -6711,7 +6729,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success", "mode": mode}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _close_image(self, params):
         """Close an image, optionally saving first."""
@@ -6745,7 +6763,7 @@ class MCPPlugin(Gimp.PlugIn):
             image.delete()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _get_selection_bounds(self, params):
         """Get selection bounding rectangle."""
@@ -6763,7 +6781,7 @@ class MCPPlugin(Gimp.PlugIn):
                 }
             }
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _get_pixel_color(self, params):
         """Get color of a single pixel."""
@@ -6796,7 +6814,7 @@ class MCPPlugin(Gimp.PlugIn):
                 }
             }
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _batch(self, params):
         """Execute a pipeline of {type, params} tool calls in one round-trip.
@@ -6852,7 +6870,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "results":   results,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _get_layer_thumbnail(self, params):
         """Return a small PNG thumbnail of a layer as base64.
@@ -6910,7 +6928,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "data_base64":  base64.b64encode(png_bytes).decode("ascii"),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _begin_transaction(self, params):
         """Open a named undo group on an image. Pair with commit or rollback."""
@@ -6932,7 +6950,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "active":      sorted(self._active_transactions.keys()),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _commit_transaction(self, params):
         """Close a named undo group on its recorded image."""
@@ -6953,7 +6971,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "active":      sorted(self._active_transactions.keys()),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _rollback_transaction(self, params):
         """Close and undo a named undo group (everything inside rolls back)."""
@@ -6979,7 +6997,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "active":      sorted(self._active_transactions.keys()),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _get_canvas_info(self, params):
         """Return a consolidated snapshot of the active image's state.
@@ -7054,7 +7072,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "is_dirty":             is_dirty,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _get_histogram(self, params):
         """Get histogram statistics for a layer channel."""
@@ -7099,7 +7117,7 @@ class MCPPlugin(Gimp.PlugIn):
             else:
                 return {"status": "error", "error": "gimp-drawable-histogram not available"}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 11 — Discovery (3.2 migration helpers)
@@ -7155,7 +7173,7 @@ class MCPPlugin(Gimp.PlugIn):
                 }
             }
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _list_blend_modes(self, params):
         """Return the set of blend-mode strings accepted by set_layer_properties / paint_stroke.
@@ -7182,7 +7200,7 @@ class MCPPlugin(Gimp.PlugIn):
                 }
             }
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _list_gegl_operations(self, params):
         """List available GEGL operations matching an optional prefix (e.g. 'gegl:blur').
@@ -7231,7 +7249,7 @@ class MCPPlugin(Gimp.PlugIn):
                 }
             }
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 12 — Paths
@@ -7266,7 +7284,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "paths":  paths,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _rename_path(self, params):
         """Rename a path via path.set_name."""
@@ -7286,7 +7304,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "old_name": path_name, "new_name": path.get_name(),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _delete_path(self, params):
         """Remove a path via image.remove_path."""
@@ -7303,7 +7321,7 @@ class MCPPlugin(Gimp.PlugIn):
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success", "path_name": path_name}}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _set_path_visible(self, params):
         """Toggle a path's visibility via path.set_visible."""
@@ -7323,7 +7341,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "status": "success", "path_name": path_name, "visible": visible,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _selection_to_path(self, params):
         """Convert the current selection to a path via plug-in-sel2path.
@@ -7362,7 +7380,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "count":     len(new_paths),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _export_path_as_svg(self, params):
         """Export a named path to an SVG file via gimp-image-export-path-to-file."""
@@ -7397,7 +7415,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "size_bytes": size_bytes,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _add_text_on_path(self, params):
         """Render text along a path.
@@ -7460,7 +7478,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "layer_name": drawable.get_name(),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _reorder_layer_filter(self, params):
         """Change a filter's position in the NDE stack.
@@ -7504,7 +7522,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "visible":   new_state,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _remove_layer_filter(self, params):
         """Remove a live filter from a layer via gimp-drawable-filter-delete.
@@ -7540,7 +7558,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "filter_id": filter_id,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _update_layer_filter(self, params):
         """Set one or more GEGL properties on a live filter via filter.get_config."""
@@ -7575,7 +7593,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "applied":   applied,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _list_layer_filters(self, params):
         """Enumerate non-destructive filters attached to a layer."""
@@ -7608,7 +7626,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "filters":    filters,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _apply_filter_nondestructive(self, params):
         """Apply a GEGL op to a drawable without merging — keep it as a live filter.
@@ -7658,7 +7676,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "props_applied": list(props.keys()),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _text_layer_to_path(self, params):
         """Convert a text layer's glyphs to a path via Gimp.Path.new_from_text_layer."""
@@ -7689,7 +7707,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "path_name":  path.get_name(),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _import_svg_as_path(self, params):
         """Import an SVG file as one or more paths via gimp-image-import-paths-from-file.
@@ -7738,7 +7756,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "count":       len(imported),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _path_stroke(self, params):
         """Stroke a named path on a drawable via edit_stroke_item.
@@ -7779,7 +7797,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "path_name":  path_name,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _path_to_selection(self, params):
         """Convert a named path to a selection using image.select_item."""
@@ -7802,7 +7820,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "operation": operation,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _path_create(self, params):
         """Create a bezier path and insert it into the image.
@@ -7876,7 +7894,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "closed":     close,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     # =========================================================================
     # CATEGORY 13 — Channels & Masks
@@ -7929,7 +7947,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "layer_name": layer.get_name(),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _layer_mask_to_selection(self, params):
         """Load a layer's mask into the selection via image.select_item."""
@@ -7951,7 +7969,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "operation":  operation,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _quick_mask_toggle(self, params):
         """Enter / exit quick-mask paint mode.
@@ -8005,7 +8023,7 @@ class MCPPlugin(Gimp.PlugIn):
                              "nor gimp-image-get-quick-mask-state is available in this "
                              "GIMP build — use the UI (Shift+Q) to toggle quick mask"}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _set_channel_properties(self, params):
         """Set opacity / color / visibility on a named channel."""
@@ -8049,7 +8067,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "applied":      applied,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _rename_channel(self, params):
         """Rename a named channel via channel.set_name."""
@@ -8073,7 +8091,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "new_name": channel.get_name(),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _delete_channel(self, params):
         """Remove a named channel via image.remove_channel."""
@@ -8093,7 +8111,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "channel_name": channel_name,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _duplicate_channel(self, params):
         """Duplicate a channel via channel.copy + image.insert_channel."""
@@ -8124,7 +8142,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "new_name":      dup.get_name(),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _channel_to_selection(self, params):
         """Load a named channel back into the selection via image.select_item."""
@@ -8147,7 +8165,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "operation":    operation,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _save_selection_as_channel(self, params):
         """Save the current selection as a named channel via Gimp.Selection.save."""
@@ -8168,7 +8186,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "name":    channel.get_name(),
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
     def _list_channels(self, params):
         """Enumerate an image's saved channels (not the built-in RGB/A ones)."""
@@ -8196,7 +8214,7 @@ class MCPPlugin(Gimp.PlugIn):
                 "channels": channels,
             }}
         except Exception as e:
-            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+            return self._err_response(e)
 
 
 Gimp.main(MCPPlugin.__gtype__, sys.argv)
