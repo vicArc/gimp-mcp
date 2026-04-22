@@ -58,6 +58,9 @@ class MCPPlugin(Gimp.PlugIn):
         self.auto_disconnect_client = True
         # name → image_index mapping for begin/commit/rollback_transaction
         self._active_transactions = {}
+        # image_id → [display_id, ...] — tracked so close_image can clean up
+        # displays (GIMP 3.x has no API to enumerate displays for an image)
+        self._image_displays = {}
 
     def do_set_i18n(self, procname):
         # Plugin has no translations; tell GIMP so it stops logging
@@ -1762,7 +1765,7 @@ class MCPPlugin(Gimp.PlugIn):
                 Gimp.context_set_background(bg_color)
                 Gimp.Drawable.edit_fill(layer, Gimp.FillType.BACKGROUND)
 
-            Gimp.Display.new(image)
+            self._track_display(image, Gimp.Display.new(image))
             Gimp.displays_flush()
 
             print(f"New canvas created: {width}x{height} {color_mode} fill={fill}")
@@ -1789,6 +1792,13 @@ class MCPPlugin(Gimp.PlugIn):
     # =========================================================================
     # SHARED HELPERS
     # =========================================================================
+
+    def _track_display(self, image, display):
+        """Record a display ID so _close_image can find and delete it later."""
+        img_id = image.get_id()
+        if img_id not in self._image_displays:
+            self._image_displays[img_id] = []
+        self._image_displays[img_id].append(display.get_id())
 
     def _err_response(self, exc, code=None):
         """Build a structured error response from an exception.
@@ -1984,6 +1994,7 @@ class MCPPlugin(Gimp.PlugIn):
             if image is None:
                 return {"status": "error", "error": f"Could not open file: {file_path}"}
             display = Gimp.Display.new(image)
+            self._track_display(image, display)
             Gimp.displays_flush()
             base_type = image.get_base_type()
             mode_map = {
@@ -2066,7 +2077,7 @@ class MCPPlugin(Gimp.PlugIn):
             image = self._get_image(image_index)
             dup   = image.duplicate()
             try:
-                Gimp.Display.new(dup)
+                self._track_display(dup, Gimp.Display.new(dup))
             except Exception:
                 pass
             Gimp.displays_flush()
@@ -2355,7 +2366,7 @@ class MCPPlugin(Gimp.PlugIn):
             image = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, gio_file)
             if image is None:
                 return {"status": "error", "error": f"could not load: {file_path}"}
-            Gimp.Display.new(image)
+            self._track_display(image, Gimp.Display.new(image))
             Gimp.displays_flush()
             return {"status": "success", "results": {
                 "status": "success",
@@ -2699,7 +2710,7 @@ class MCPPlugin(Gimp.PlugIn):
                 image = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, gio_file)
                 if image is None:
                     continue
-                try: Gimp.Display.new(image)
+                try: self._track_display(image, Gimp.Display.new(image))
                 except Exception: pass
                 loaded.append({"xcf_path": xcf_path, "image_id": image.get_id()})
             Gimp.displays_flush()
@@ -4784,25 +4795,24 @@ class MCPPlugin(Gimp.PlugIn):
             image_index = int(params.get("image_index", 0))
             layer_name  = params.get("layer_name", None)
             color_str   = params.get("color", "white")
-            threshold   = int(params.get("threshold", 15))
+            threshold   = float(params.get("threshold", 15))
             operation   = params.get("operation", "replace")
+            antialias   = bool(params.get("antialias", True))
+            sample_merged = bool(params.get("sample_merged", False))
             image    = self._get_image(image_index)
             drawable = self._resolve_layer(image, layer_name, None)
-            op = self._channel_ops_from_string(operation)
+            op    = self._channel_ops_from_string(operation)
             color = Gegl.Color.new(color_str)
-            pdb = Gimp.get_pdb()
-            proc = pdb.lookup_procedure("gimp-by-color-select")
-            if proc:
-                cfg = proc.create_config()
-                cfg.set_property("drawable",    drawable)
-                cfg.set_property("color",       color)
-                cfg.set_property("threshold",   threshold)
-                cfg.set_property("operation",   op)
-                cfg.set_property("antialias",   True)
-                cfg.set_property("feather",     False)
-                cfg.set_property("feather-radius", 0.0)
-                cfg.set_property("sample-merged", False)
-                proc.run(cfg)
+            # gimp-by-color-select was removed in GIMP 3.x; use the Python API directly.
+            thresh_norm = threshold / 255.0 if threshold > 1 else threshold
+            Gimp.context_push()
+            try:
+                Gimp.context_set_sample_threshold(thresh_norm)
+                Gimp.context_set_sample_merged(sample_merged)
+                Gimp.context_set_antialias(antialias)
+                image.select_color(op, drawable, color)
+            finally:
+                Gimp.context_pop()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
@@ -4884,14 +4894,12 @@ class MCPPlugin(Gimp.PlugIn):
             drawable = self._resolve_layer(image, layer_name, None)
             op = self._channel_ops_from_string(operation)
 
+            thresh_norm = threshold / 255.0 if threshold > 1 else threshold
             Gimp.context_push()
             try:
-                try: Gimp.context_set_sample_threshold(threshold / 255.0 if threshold > 1 else threshold)
-                except Exception: pass
-                try: Gimp.context_set_sample_merged(sample_merged)
-                except Exception: pass
-                try: Gimp.context_set_antialias(antialias)
-                except Exception: pass
+                Gimp.context_set_sample_threshold(thresh_norm)
+                Gimp.context_set_sample_merged(sample_merged)
+                Gimp.context_set_antialias(antialias)
                 image.select_contiguous_color(op, drawable, x, y)
             finally:
                 Gimp.context_pop()
@@ -5369,16 +5377,27 @@ class MCPPlugin(Gimp.PlugIn):
         try:
             image  = self._get_image(int(params.get("image_index", 0)))
             layers = image.get_layers()
+            # Build reverse map: int enum value → friendly name, first-seen wins.
+            _rev = {}
+            for friendly, enum_name in self._BLEND_MODE_ENUM_MAP.items():
+                val = getattr(Gimp.LayerMode, enum_name, None)
+                if val is not None:
+                    try:
+                        _rev.setdefault(int(val), friendly)
+                    except Exception:
+                        pass
             layer_list = []
             for i, layer in enumerate(layers):
                 try:
+                    raw_mode = layer.get_mode()
+                    blend_mode = _rev.get(int(raw_mode), str(raw_mode))
                     layer_list.append({
                         "index":      i,
                         "name":       layer.get_name(),
                         "id":         layer.get_id(),
                         "visible":    layer.get_visible(),
                         "opacity":    layer.get_opacity(),
-                        "blend_mode": str(layer.get_mode()),
+                        "blend_mode": blend_mode,
                         "width":      layer.get_width(),
                         "height":     layer.get_height(),
                         "has_alpha":  layer.has_alpha(),
@@ -5426,7 +5445,7 @@ class MCPPlugin(Gimp.PlugIn):
             image_index = int(params.get("image_index", 0))
             layer_name  = params.get("layer_name", None)
             fill_type   = (params.get("fill_type") or "foreground").lower()
-            color_str   = params.get("color", "white")
+            color_str   = params.get("color") or None  # treat explicit null same as omitted
             image    = self._get_image(image_index)
             drawable = self._resolve_layer(image, layer_name, None)
             image.undo_group_start()
@@ -5442,9 +5461,9 @@ class MCPPlugin(Gimp.PlugIn):
                 elif fill_type == "pattern":
                     Gimp.Drawable.edit_fill(drawable, Gimp.FillType.PATTERN)
                 else:
-                    # foreground (default) or explicit color
-                    fg = Gegl.Color.new(color_str if fill_type not in ("foreground",) else color_str)
-                    Gimp.context_set_foreground(fg)
+                    # Use current context foreground unless an explicit color was provided.
+                    if color_str is not None:
+                        Gimp.context_set_foreground(Gegl.Color.new(color_str))
                     Gimp.Drawable.edit_fill(drawable, Gimp.FillType.FOREGROUND)
             finally:
                 Gimp.context_pop()
@@ -6770,13 +6789,18 @@ class MCPPlugin(Gimp.PlugIn):
                     cfg.set_property("image", image)
                     cfg.set_property("file", gio_file)
                     proc.run(cfg)
-            # Delete all displays for this image
-            for display in Gimp.get_displays():
-                try:
-                    if display.get_image().get_id() == image.get_id():
-                        Gimp.Display.delete(display)
-                except Exception:
-                    pass
+            # Close tracked displays for this image.
+            # GIMP 3.x removed Gimp.get_displays(); no API enumerates displays by
+            # image, so we track display IDs at creation time via _track_display().
+            img_id = image.get_id()
+            for disp_id in self._image_displays.pop(img_id, []):
+                if Gimp.Display.id_is_valid(disp_id):
+                    d = Gimp.Display.get_by_id(disp_id)
+                    if d:
+                        try:
+                            d.delete()
+                        except Exception:
+                            pass
             image.delete()
             return {"status": "success", "results": {"status": "success"}}
         except Exception as e:
