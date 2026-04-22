@@ -1011,7 +1011,7 @@ class MCPPlugin(Gimp.PlugIn):
                             # Some export procedures might not need drawable specification
                             pass
                     
-                    result = export_proc.run(export_config)
+                    result = self._run_proc(export_proc, export_config)
                     print(f"Export result: {result}")
                     
                 except Exception as export_error:
@@ -1034,7 +1034,7 @@ class MCPPlugin(Gimp.PlugIn):
                                 save_config = save_proc.create_config()
                                 save_config.set_property('image', final_image)
                                 save_config.set_property('file', file_obj)
-                                save_result = save_proc.run(save_config)
+                                save_result = self._run_proc(save_proc, save_config)
                                 print(f"PDB save result: {save_result}")
                             else:
                                 return {
@@ -1800,6 +1800,63 @@ class MCPPlugin(Gimp.PlugIn):
             self._image_displays[img_id] = []
         self._image_displays[img_id].append(display.get_id())
 
+    def _run_proc(self, _proc, _cfg):
+        """Run a PDB procedure config, check PDB status, raise RuntimeError on error.
+
+        Parameter names use leading underscore so that the bulk replace of
+        self._run_proc(proc, cfg) → self._run_proc(proc, cfg) does not recurse here.
+        Returns the GimpValueArray for callers that read return values.
+        """
+        _va = _proc.run(_cfg)
+        if _va is not None:
+            try:
+                _status = _va.index(0)
+                if _status in (Gimp.PDBStatusType.EXECUTION_ERROR,
+                               Gimp.PDBStatusType.CALLING_ERROR):
+                    parts = []
+                    for _i in range(1, _va.length()):
+                        try:
+                            parts.append(str(_va.index(_i)))
+                        except Exception:
+                            break
+                    raise RuntimeError(
+                        ": ".join(parts) if parts else f"PDB {_status.name}"
+                    )
+            except (AttributeError, TypeError, IndexError):
+                pass  # unexpected format — treat as success
+        return _va
+
+    def _va_values(self, va):
+        """Extract JSON-safe return values from a GimpValueArray, skipping index 0 (status).
+
+        GIMP 3.x ValueArrays always carry the PDB status at index 0;
+        actual return values start at index 1.
+        """
+        if va is None:
+            return []
+        out = []
+        try:
+            for i in range(1, va.length()):
+                try:
+                    v = va.index(i)
+                    if v is None or isinstance(v, (bool, int, float, str)):
+                        out.append(v)
+                    elif hasattr(v, 'get_id'):
+                        out.append(v.get_id())
+                    else:
+                        try:
+                            out.append([
+                                x.get_id() if hasattr(x, 'get_id') else x
+                                for x in list(v)
+                            ])
+                        except Exception:
+                            out.append(str(v))
+                except Exception:
+                    out.append(None)
+        except Exception:
+            pass
+        return out
+
     def _err_response(self, exc, code=None):
         """Build a structured error response from an exception.
 
@@ -1930,7 +1987,7 @@ class MCPPlugin(Gimp.PlugIn):
                                 pass
                 except Exception:
                     pass
-                proc.run(cfg)
+                self._run_proc(proc, cfg)
             return os.path.getsize(file_path)
         finally:
             if should_delete:
@@ -1949,10 +2006,10 @@ class MCPPlugin(Gimp.PlugIn):
             cfg.set_property("drawable", drawable)
             cfg.set_property("operation-name", op_name)
             cfg.set_property("name", op_name)
-            result = filter_proc.run(cfg)
-            # Get the filter object
+            result = self._run_proc(filter_proc, cfg)
+            # Get the filter object (index 0 = PDB status; filter object is at index 1)
             try:
-                filtr = result.index(0)
+                filtr = result.index(1)
                 for k, v in props.items():
                     try:
                         filtr.set_property(k, v)
@@ -1964,7 +2021,7 @@ class MCPPlugin(Gimp.PlugIn):
                     acfg = apply_proc.create_config()
                     acfg.set_property("drawable", drawable)
                     acfg.set_property("filter", filtr)
-                    apply_proc.run(acfg)
+                    self._run_proc(apply_proc, acfg)
             except Exception:
                 pass
         else:
@@ -2107,7 +2164,7 @@ class MCPPlugin(Gimp.PlugIn):
                 cfg = proc.create_config()
                 cfg.set_property("image", image)
                 cfg.set_property("file", gio_file)
-                proc.run(cfg)
+                self._run_proc(proc, cfg)
             else:
                 Gimp.file_overwrite(Gimp.RunMode.NONINTERACTIVE, image, gio_file)
             return {"status": "success", "results": {"status": "success", "file_path": file_path}}
@@ -2211,7 +2268,7 @@ class MCPPlugin(Gimp.PlugIn):
                 if proc:
                     cfg = proc.create_config()
                     cfg.set_property("drawable", drawable)
-                    proc.run(cfg)
+                    self._run_proc(proc, cfg)
                 else:
                     proc2 = pdb.lookup_procedure("gimp-drawable-levels")
                     if proc2:
@@ -2224,7 +2281,7 @@ class MCPPlugin(Gimp.PlugIn):
                         cfg2.set_property("gamma", 1.0)
                         cfg2.set_property("low-output", 0.0)
                         cfg2.set_property("high-output", 1.0)
-                        proc2.run(cfg2)
+                        self._run_proc(proc2, cfg2)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -2254,9 +2311,9 @@ class MCPPlugin(Gimp.PlugIn):
                     }}
                 cfg = proc.create_config()
                 cfg.set_property("image", image)
-                result = proc.run(cfg)
+                result = self._run_proc(proc, cfg)
                 try:
-                    new_layer = result.index(0) if result is not None else None
+                    new_layer = result.index(1) if result is not None else None
                 except Exception:
                     new_layer = None
                 if new_layer is not None and layer_name:
@@ -2471,7 +2528,7 @@ class MCPPlugin(Gimp.PlugIn):
             except Exception: pass
             try: cfg.set_property("dither",        dither)
             except Exception: pass
-            proc.run(cfg)
+            self._run_proc(proc, cfg)
             size = os.path.getsize(file_path) if os.path.exists(file_path) else None
             return {"status": "success", "results": {
                 "status": "success", "file_path": file_path,
@@ -2506,8 +2563,7 @@ class MCPPlugin(Gimp.PlugIn):
         """Execute a PDB procedure with a dict of property values.
 
         Dispatches through lookup_procedure + create_config + set_property
-        per key + run. Returns the raw GValueArray index 0+ if the caller
-        set return_as_list=True; otherwise returns a generic success.
+        per key + run. Surfaces PDB errors and returns all return values.
         """
         try:
             name = params.get("name") or ""
@@ -2526,13 +2582,13 @@ class MCPPlugin(Gimp.PlugIn):
                     applied.append(k)
                 except Exception:
                     pass
-            result = proc.run(cfg)
+            va = self._run_proc(proc, cfg)
+            return_values = self._va_values(va)
             Gimp.displays_flush()
             return {"status": "success", "results": {
-                "status":   "success",
-                "name":     name,
-                "applied":  applied,
-                "ran":      True,
+                "name":          name,
+                "applied_args":  applied,
+                "return_values": return_values if return_values else None,
             }}
         except Exception as e:
             return self._err_response(e)
@@ -2572,9 +2628,17 @@ class MCPPlugin(Gimp.PlugIn):
             except Exception:
                 try: cfg.set_property("script", code)
                 except Exception: pass
-            proc.run(cfg)
+            va = self._run_proc(proc, cfg)
+            # script-fu-eval returns the Scheme eval result as a string at index 1
+            script_result = None
+            try:
+                if va is not None and va.length() > 1:
+                    script_result = str(va.index(1))
+            except Exception:
+                pass
             return {"status": "success", "results": {
-                "status": "success", "executed_chars": len(code),
+                "executed_chars": len(code),
+                "result":         script_result,
             }}
         except Exception as e:
             return self._err_response(e)
@@ -2991,8 +3055,8 @@ class MCPPlugin(Gimp.PlugIn):
                         cfg.set_property("filter", params.get("filter") or "")
                     except Exception: pass
                     try:
-                        res = proc.run(cfg)
-                        raw = res.index(0) if res else None
+                        res = self._run_proc(proc, cfg)
+                        raw = res.index(1) if res and res.length() > 1 else None
                         if raw is not None:
                             dynamics = list(raw)
                     except Exception:
@@ -3065,7 +3129,7 @@ class MCPPlugin(Gimp.PlugIn):
             ):
                 try: cfg.set_property(prop, val)
                 except Exception: pass
-            result = proc.run(cfg)
+            result = self._run_proc(proc, cfg)
             names = []
             try:
                 # gimp-pdb-query returns (count, [names]) in some bindings.
@@ -3119,7 +3183,7 @@ class MCPPlugin(Gimp.PlugIn):
                 return {"status": "error", "error": f"brush not found: {name}"}
             try: cfg.set_property("brush", brush)
             except Exception: pass
-            proc.run(cfg)
+            self._run_proc(proc, cfg)
             try: Gimp.brushes_refresh()
             except Exception: pass
             return {"status": "success", "results": {"status": "success", "name": name}}
@@ -3143,7 +3207,7 @@ class MCPPlugin(Gimp.PlugIn):
             cfg = proc.create_config()
             try: cfg.set_property("pattern", pattern)
             except Exception: pass
-            proc.run(cfg)
+            self._run_proc(proc, cfg)
             try: Gimp.patterns_refresh()
             except Exception: pass
             return {"status": "success", "results": {"status": "success", "name": name}}
@@ -3503,8 +3567,8 @@ class MCPPlugin(Gimp.PlugIn):
                 cfg.set_property("channel",     channel_enum)
                 cfg.set_property("start-range", 0.0)
                 cfg.set_property("end-range",   1.0)
-                res = proc.run(cfg)
-                try: return float(res.index(0))
+                res = self._run_proc(proc, cfg)
+                try: return float(res.index(1))
                 except Exception: return 0.0
 
             r = _mean(Gimp.HistogramChannel.RED)
@@ -4005,7 +4069,7 @@ class MCPPlugin(Gimp.PlugIn):
                     cfg = proc.create_config()
                     cfg.set_property("drawable",       drawable)
                     cfg.set_property("desaturate-mode", Gimp.DesaturateMode.LUMINANCE)
-                    proc.run(cfg)
+                    self._run_proc(proc, cfg)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -4119,7 +4183,7 @@ class MCPPlugin(Gimp.PlugIn):
                 cfg = proc.create_config()
                 cfg.set_property("drawable", drawable)
                 cfg.set_property("levels",   levels)
-                proc.run(cfg)
+                self._run_proc(proc, cfg)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -4158,7 +4222,7 @@ class MCPPlugin(Gimp.PlugIn):
                 cfg.set_property("channel",        ch)
                 cfg.set_property("low-threshold",  low)
                 cfg.set_property("high-threshold", high)
-                proc.run(cfg)
+                self._run_proc(proc, cfg)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -4218,7 +4282,7 @@ class MCPPlugin(Gimp.PlugIn):
                 cfg.set_property("low-output",   lo)
                 cfg.set_property("high-output",  ho)
                 cfg.set_property("clamp-output", False)
-                proc.run(cfg)
+                self._run_proc(proc, cfg)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -4290,7 +4354,7 @@ class MCPPlugin(Gimp.PlugIn):
                         cfg.set_property("drawable", drawable)
                         cfg.set_property("channel",  channel)
                         cfg.set_property("points",   typed)
-                        proc.run(cfg)
+                        self._run_proc(proc, cfg)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -4316,7 +4380,7 @@ class MCPPlugin(Gimp.PlugIn):
                     cfg.set_property("drawable", drawable)
                     cfg.set_property("brightness", brightness / 127.0)
                     cfg.set_property("contrast",   contrast   / 127.0)
-                    proc.run(cfg)
+                    self._run_proc(proc, cfg)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -4357,7 +4421,7 @@ class MCPPlugin(Gimp.PlugIn):
                     cfg.set_property("lightness",  lightness)
                     cfg.set_property("saturation", saturation)
                     cfg.set_property("overlap", 0.0)
-                    proc.run(cfg)
+                    self._run_proc(proc, cfg)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -4395,7 +4459,7 @@ class MCPPlugin(Gimp.PlugIn):
                     cfg.set_property("magenta-green", magenta_green)
                     cfg.set_property("yellow-blue",   yellow_blue)
                     cfg.set_property("preserve-lum",  True)
-                    proc.run(cfg)
+                    self._run_proc(proc, cfg)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -4424,7 +4488,7 @@ class MCPPlugin(Gimp.PlugIn):
                     cfg.set_property("radius",    radius)
                     cfg.set_property("amount",    amount / 100.0)
                     cfg.set_property("threshold", threshold)
-                    proc.run(cfg)
+                    self._run_proc(proc, cfg)
                 else:
                     self._apply_gegl_filter(image, drawable, "gegl:unsharp-mask", {
                         "std-dev": radius,
@@ -4458,7 +4522,7 @@ class MCPPlugin(Gimp.PlugIn):
                     cfg.set_property("horizontal", int(radius_x * 2 + 1))
                     cfg.set_property("vertical",   int(radius_y * 2 + 1))
                     cfg.set_property("method",     0)
-                    proc.run(cfg)
+                    self._run_proc(proc, cfg)
                 else:
                     self._apply_gegl_filter(image, drawable, "gegl:gaussian-blur", {
                         "std-dev-x": radius_x,
@@ -4516,7 +4580,7 @@ class MCPPlugin(Gimp.PlugIn):
                     cfg = proc.create_config()
                     cfg.set_property("drawable", drawable)
                     cfg.set_property("desaturate-mode", mode)
-                    proc.run(cfg)
+                    self._run_proc(proc, cfg)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -4539,7 +4603,7 @@ class MCPPlugin(Gimp.PlugIn):
                     cfg = proc.create_config()
                     cfg.set_property("drawable", drawable)
                     cfg.set_property("linear", False)
-                    proc.run(cfg)
+                    self._run_proc(proc, cfg)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -4613,7 +4677,7 @@ class MCPPlugin(Gimp.PlugIn):
                     if proc:
                         cfg = proc.create_config()
                         cfg.set_property("image", image)
-                        proc.run(cfg)
+                        self._run_proc(proc, cfg)
                 else:
                     _ok, non_empty, x1, y1, x2, y2 = Gimp.Selection.bounds(image)
                     if non_empty:
@@ -4673,7 +4737,7 @@ class MCPPlugin(Gimp.PlugIn):
                             cfg.set_property("auto-center", True)
                             cfg.set_property("center-x",  0)
                             cfg.set_property("center-y",  0)
-                            proc.run(cfg)
+                            self._run_proc(proc, cfg)
                     image.flatten()
             finally:
                 image.undo_group_end()
@@ -5205,7 +5269,7 @@ class MCPPlugin(Gimp.PlugIn):
                 cfg.set_property("channel",        ch)
                 cfg.set_property("low-threshold",  low)
                 cfg.set_property("high-threshold", high)
-                proc.run(cfg)
+                self._run_proc(proc, cfg)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -5550,7 +5614,7 @@ class MCPPlugin(Gimp.PlugIn):
                 if proc:
                     cfg = proc.create_config()
                     cfg.set_property("drawable", drawable)
-                    proc.run(cfg)
+                    self._run_proc(proc, cfg)
                 Gimp.Selection.none(image)
             finally:
                 Gimp.context_pop()
@@ -5588,7 +5652,7 @@ class MCPPlugin(Gimp.PlugIn):
                 if proc:
                     cfg = proc.create_config()
                     cfg.set_property("drawable", drawable)
-                    proc.run(cfg)
+                    self._run_proc(proc, cfg)
                 Gimp.Selection.none(image)
             finally:
                 Gimp.context_pop()
@@ -5903,7 +5967,7 @@ class MCPPlugin(Gimp.PlugIn):
                 ccfg = cproc.create_config()
                 ccfg.set_property("layer", tl)
                 ccfg.set_property("color", Gegl.Color.new(color_str))
-                cproc.run(ccfg)
+                self._run_proc(cproc, ccfg)
         except Exception:
             pass
         return tl
@@ -5923,7 +5987,7 @@ class MCPPlugin(Gimp.PlugIn):
         cfg.set_property("antialias", True)
         cfg.set_property("size",      float(size))
         cfg.set_property("font",      font_obj)
-        proc.run(cfg)
+        self._run_proc(proc, cfg)
 
     def _find_new_layer(self, image, before_ids):
         """Return the first layer whose id is not in before_ids."""
@@ -6008,14 +6072,14 @@ class MCPPlugin(Gimp.PlugIn):
                         cfg = proc.create_config()
                         cfg.set_property("layer", layer)
                         cfg.set_property("text",  new_text)
-                        proc.run(cfg)
+                        self._run_proc(proc, cfg)
                 if new_font is not None:
                     proc = pdb.lookup_procedure("gimp-text-layer-set-font")
                     if proc:
                         cfg = proc.create_config()
                         cfg.set_property("layer", layer)
                         cfg.set_property("font",  new_font)
-                        proc.run(cfg)
+                        self._run_proc(proc, cfg)
                 if new_size is not None:
                     proc = pdb.lookup_procedure("gimp-text-layer-set-font-size")
                     if proc:
@@ -6023,14 +6087,14 @@ class MCPPlugin(Gimp.PlugIn):
                         cfg.set_property("layer",     layer)
                         cfg.set_property("font-size", float(new_size))
                         cfg.set_property("unit",      Gimp.Unit.PIXEL)
-                        proc.run(cfg)
+                        self._run_proc(proc, cfg)
                 if new_color is not None:
                     proc = pdb.lookup_procedure("gimp-text-layer-set-color")
                     if proc:
                         cfg = proc.create_config()
                         cfg.set_property("layer", layer)
                         cfg.set_property("color", Gegl.Color.new(new_color))
-                        proc.run(cfg)
+                        self._run_proc(proc, cfg)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -6124,7 +6188,7 @@ class MCPPlugin(Gimp.PlugIn):
                                 cfg.set_property("deform-type",   0)  # 0 = MOVE
                                 cfg.set_property("x",             int(x + dx))
                                 cfg.set_property("y",             int(y + dy))
-                                proc.run(cfg)
+                                self._run_proc(proc, cfg)
                             except Exception:
                                 pass
             finally:
@@ -6214,7 +6278,7 @@ class MCPPlugin(Gimp.PlugIn):
                         cfg.set_property("horizontal", size)
                         cfg.set_property("vertical",   size)
                         cfg.set_property("method",     0)
-                        blur_proc.run(cfg)
+                        blur_self._run_proc(proc, cfg)
 
                 shadow_layer.set_name("Drop Shadow")
             finally:
@@ -6788,7 +6852,7 @@ class MCPPlugin(Gimp.PlugIn):
                     cfg = proc.create_config()
                     cfg.set_property("image", image)
                     cfg.set_property("file", gio_file)
-                    proc.run(cfg)
+                    self._run_proc(proc, cfg)
             # Close tracked displays for this image.
             # GIMP 3.x removed Gimp.get_displays(); no API enumerates displays by
             # image, so we track display IDs at creation time via _track_display().
@@ -7138,8 +7202,9 @@ class MCPPlugin(Gimp.PlugIn):
                 cfg.set_property("channel",     channel)
                 cfg.set_property("start-range", 0.0)
                 cfg.set_property("end-range",   1.0)
-                result = proc.run(cfg)
-                # Return values: mean, std-dev, median, pixels, count, percentile
+                result = self._run_proc(proc, cfg)
+                # Index 0 = PDB status; return values start at index 1:
+                # 1=mean, 2=std-dev, 3=median, 4=pixels, 5=count
                 def _safe(idx):
                     try:
                         return result.index(idx)
@@ -7148,11 +7213,11 @@ class MCPPlugin(Gimp.PlugIn):
                 return {
                     "status": "success",
                     "results": {
-                        "mean":    _safe(0),
-                        "std_dev": _safe(1),
-                        "median":  _safe(2),
-                        "pixels":  _safe(3),
-                        "count":   _safe(4),
+                        "mean":    _safe(1),
+                        "std_dev": _safe(2),
+                        "median":  _safe(3),
+                        "pixels":  _safe(4),
+                        "count":   _safe(5),
                     }
                 }
             else:
@@ -7427,7 +7492,7 @@ class MCPPlugin(Gimp.PlugIn):
             cfg.set_property("image", image)
             cfg.set_property("file",  Gio.File.new_for_path(file_path))
             cfg.set_property("path",  path)
-            proc.run(cfg)
+            self._run_proc(proc, cfg)
             size_bytes = os.path.getsize(file_path) if os.path.exists(file_path) else None
             return {"status": "success", "results": {
                 "status":     "success",
@@ -7570,7 +7635,7 @@ class MCPPlugin(Gimp.PlugIn):
             try:
                 cfg = proc.create_config()
                 cfg.set_property("filter", filter_obj)
-                proc.run(cfg)
+                self._run_proc(proc, cfg)
             finally:
                 image.undo_group_end()
             Gimp.displays_flush()
@@ -7762,7 +7827,7 @@ class MCPPlugin(Gimp.PlugIn):
                 cfg.set_property("file",  Gio.File.new_for_path(file_path))
                 cfg.set_property("merge", merge)
                 cfg.set_property("scale", scale)
-                proc.run(cfg)
+                self._run_proc(proc, cfg)
             finally:
                 image.undo_group_end()
 
