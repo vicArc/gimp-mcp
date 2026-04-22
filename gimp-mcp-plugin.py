@@ -1930,9 +1930,13 @@ class MCPPlugin(Gimp.PlugIn):
         JPEG). Unknown properties are silently ignored per existing behavior.
         """
         from gi.repository import Gio
+        flat_layer = None
         if flatten:
             image = image.duplicate()
-            image.flatten()
+            # flatten() returns the merged layer — capture it directly so we
+            # never have to re-resolve the drawable from the layers list, which
+            # can fail for an undisplayed duplicate and produce solid-black output.
+            flat_layer = image.flatten()
             should_delete = True
         else:
             should_delete = False
@@ -1963,8 +1967,13 @@ class MCPPlugin(Gimp.PlugIn):
                 cfg.set_property("image", image)
                 cfg.set_property("file", gio_file)
                 try:
-                    layers = image.get_layers()
-                    drawable = (image.get_selected_layers() or layers or [None])[0]
+                    # Use the flattened layer directly when available — avoids
+                    # get_layers() resolution issues on undisplayed duplicates.
+                    if flat_layer is not None:
+                        drawable = flat_layer
+                    else:
+                        layers = image.get_layers()
+                        drawable = (image.get_selected_layers() or layers or [None])[0]
                     try:
                         cfg.set_property("drawable", drawable)
                     except Exception:
@@ -2594,15 +2603,18 @@ class MCPPlugin(Gimp.PlugIn):
             return self._err_response(e)
 
     def _run_script_fu(self, params):
-        """Execute a Script-Fu snippet via script-fu-eval.
+        """Execute a Script-Fu snippet and return the expression result.
 
-        The script-fu-eval PDB procedure is part of the optional Script-Fu
-        extension, which is not installed on all GIMP 3.2.2 builds
-        (e.g. the Windows installer). This implementation probes for the
-        procedure and returns a structured 'not available' if it is
-        absent, preserving the API shape so scripts keep working on
-        builds that do ship Script-Fu.
+        plug-in-script-fu-eval (GIMP 3.x) does not expose the Scheme return
+        value in its PDB ValueArray — only the status is returned.  To work
+        around this, we wrap the user's script in TinyScheme file-I/O that
+        writes the result to a temp file, then read it back in Python.
+
+        If TinyScheme's open-output-file is unavailable (some stripped builds),
+        we fall back to running the script plain — errors still surface, but
+        result will be null.
         """
+        import tempfile
         try:
             code = params.get("script") or params.get("code") or ""
             if not code:
@@ -2617,25 +2629,60 @@ class MCPPlugin(Gimp.PlugIn):
             if proc is None:
                 return {"status": "error",
                         "error": "run_script_fu: script-fu extension is not installed "
-                                 "in this GIMP build (no script-fu-eval / "
-                                 "extension-script-fu-eval PDB proc available). "
-                                 "Use run_pdb_procedure for per-proc invocations or "
-                                 "the exec escape hatch for ad-hoc Python."}
-            cfg = proc.create_config()
-            try: cfg.set_property("run-mode", Gimp.RunMode.NONINTERACTIVE)
-            except Exception: pass
-            try: cfg.set_property("code",     code)
-            except Exception:
-                try: cfg.set_property("script", code)
+                                 "in this GIMP build. Use run_pdb_procedure for "
+                                 "per-proc invocations or call_api exec for Python."}
+
+            def _make_cfg(script_code):
+                c = proc.create_config()
+                try: c.set_property("run-mode", Gimp.RunMode.NONINTERACTIVE)
                 except Exception: pass
-            va = self._run_proc(proc, cfg)
-            # script-fu-eval returns the Scheme eval result as a string at index 1
+                try: c.set_property("code", script_code)
+                except Exception:
+                    try: c.set_property("script", script_code)
+                    except Exception: pass
+                return c
+
+            # Attempt result capture via temp file using TinyScheme file I/O.
+            tmp = tempfile.mktemp(suffix='.sfr')
+            # TinyScheme on Windows accepts forward slashes.
+            scheme_path = tmp.replace('\\', '/')
+            wrapped = (
+                f'(let ((sf-result (begin {code})))\n'
+                f'  (let ((port (open-output-file "{scheme_path}")))\n'
+                f'    (display sf-result port)\n'
+                f'    (close-output-port port))\n'
+                f'  sf-result)'
+            )
             script_result = None
             try:
-                if va is not None and va.length() > 1:
-                    script_result = str(va.index(1))
-            except Exception:
-                pass
+                self._run_proc(proc, _make_cfg(wrapped))
+                try:
+                    with open(tmp) as fh:
+                        v = fh.read().strip()
+                    if v:
+                        script_result = v
+                except OSError:
+                    pass
+                finally:
+                    try: os.unlink(tmp)
+                    except Exception: pass
+            except RuntimeError as wrap_err:
+                # If the error is from our wrapper (file I/O not available),
+                # retry without the wrapper so user errors still surface.
+                # If it's a user Script-Fu error, re-raise so agents see it.
+                err_msg = str(wrap_err)
+                if any(t in err_msg for t in (
+                        "open-output-file", "close-output-port",
+                        "unbound variable", "wrong type")):
+                    # Wrapper unsupported — run plain, no result capture
+                    try: os.unlink(tmp)
+                    except Exception: pass
+                    self._run_proc(proc, _make_cfg(code))
+                else:
+                    try: os.unlink(tmp)
+                    except Exception: pass
+                    raise  # user's Script-Fu error — propagate
+
             return {"status": "success", "results": {
                 "executed_chars": len(code),
                 "result":         script_result,
@@ -3106,43 +3153,69 @@ class MCPPlugin(Gimp.PlugIn):
     def _list_pdb_procedures(self, params):
         """List PDB procedures matching an optional substring filter.
 
-        Uses gimp-pdb-query which accepts multiple regex filters; we feed
-        the user-supplied substring as the `proc-name` pattern and match
-        every other field with '.*' to keep the query broad.
+        Tries gimp-pdb-query first (GIMP 3.x core proc).  Falls back to
+        probing a curated known-proc list when gimp-pdb-query is absent,
+        keeping the tool usable on all builds.
         """
         try:
             filter_str = params.get("filter") or ""
-            needle = filter_str.strip() or ".*"
+            needle = filter_str.strip() or ""
             pdb = Gimp.get_pdb()
-            proc = pdb.lookup_procedure("gimp-pdb-query")
-            if proc is None:
-                return {"status": "error", "error": "gimp-pdb-query not available"}
-            cfg = proc.create_config()
-            for prop, val in (
-                ("name",       needle),
-                ("blurb",      ".*"),
-                ("help",       ".*"),
-                ("authors",    ".*"),
-                ("copyright",  ".*"),
-                ("date",       ".*"),
-                ("proc-type",  ".*"),
-            ):
-                try: cfg.set_property(prop, val)
-                except Exception: pass
-            result = self._run_proc(proc, cfg)
             names = []
-            try:
-                # gimp-pdb-query returns (count, [names]) in some bindings.
-                raw = result.index(1) if result is not None else None
-                if raw is not None:
-                    names = list(raw)
-            except Exception:
-                pass
+
+            proc = pdb.lookup_procedure("gimp-pdb-query")
+            if proc is not None:
+                cfg = proc.create_config()
+                pattern = (needle or ".*")
+                for prop, val in (
+                    ("name",       pattern),
+                    ("blurb",      ".*"),
+                    ("help",       ".*"),
+                    ("authors",    ".*"),
+                    ("copyright",  ".*"),
+                    ("date",       ".*"),
+                    ("proc-type",  ".*"),
+                ):
+                    try: cfg.set_property(prop, val)
+                    except Exception: pass
+                result = self._run_proc(proc, cfg)
+                try:
+                    raw = result.index(1) if result is not None else None
+                    if raw is not None:
+                        names = list(raw)
+                except Exception:
+                    pass
+            else:
+                # gimp-pdb-query not available — probe a known-useful set and
+                # return those that exist, filtered by the needle substring.
+                KNOWN = [
+                    "gimp-version", "gimp-image-list", "gimp-image-duplicate",
+                    "gimp-image-flatten", "gimp-image-merge-visible-layers",
+                    "gimp-drawable-histogram", "gimp-drawable-levels",
+                    "gimp-drawable-desaturate", "gimp-drawable-hue-saturation",
+                    "gimp-drawable-brightness-contrast", "gimp-drawable-curves-spline",
+                    "gimp-drawable-filter-new", "gimp-drawable-merge-filter",
+                    "gimp-item-transform-translate", "gimp-item-transform-flip-simple",
+                    "gimp-item-transform-rotate", "gimp-item-transform-scale",
+                    "file-png-export", "file-png-save",
+                    "file-jpeg-export", "file-jpeg-save",
+                    "gimp-edit-copy", "gimp-edit-paste",
+                    "gimp-selection-all", "gimp-selection-none",
+                    "gimp-image-select-ellipse", "gimp-image-select-rectangle",
+                    "gimp-image-select-color", "gimp-image-select-contiguous-color",
+                    "script-fu-eval", "extension-script-fu-eval",
+                ]
+                low = needle.lower()
+                for name in KNOWN:
+                    if low in name.lower() and pdb.lookup_procedure(name) is not None:
+                        names.append(name)
+
             return {"status": "success", "results": {
-                "status":     "success",
                 "filter":     filter_str,
                 "count":      len(names),
                 "procedures": names,
+                "note":       None if pdb.lookup_procedure("gimp-pdb-query") else
+                              "gimp-pdb-query unavailable; results limited to known-proc probe",
             }}
         except Exception as e:
             return self._err_response(e)
@@ -6136,61 +6209,44 @@ class MCPPlugin(Gimp.PlugIn):
                     dy     = float(v.get("dy", 0))
                     radius = float(v.get("radius", 40))
                     amount = float(v.get("amount", 0.3))
+                    img_w  = image.get_width()
+                    img_h  = image.get_height()
 
-                    # Try GEGL warp operation first (GIMP 3 native approach)
+                    # Selection-based smear: copy the influence circle, paste
+                    # it as a floating selection, nudge by (dx*amount, dy*amount),
+                    # and anchor.  This is reliable across all GIMP 3.x builds
+                    # and produces a visible push/smear without corrupting the
+                    # layer.  The previous GEGL gegl:warp path was incorrect:
+                    # that node outputs a displacement MAP (all-zeros → black),
+                    # not the warped image, causing every call to overwrite the
+                    # layer with solid black.
+                    x_sel = max(0, int(x - radius))
+                    y_sel = max(0, int(y - radius))
+                    w_sel = min(img_w - x_sel, int(radius * 2))
+                    h_sel = min(img_h - y_sel, int(radius * 2))
+                    if w_sel <= 0 or h_sel <= 0:
+                        continue
+                    Gimp.context_push()
                     try:
-                        Gegl.init(None)
-                        buf        = drawable.get_buffer()
-                        shadow_buf = drawable.get_shadow_buffer()
-                        graph      = Gegl.Node()
-
-                        src = graph.create_child("gegl:buffer-source")
-                        src.set_property("buffer", buf)
-
-                        warp = graph.create_child("gegl:warp")
-                        warp.set_property("behavior",    0)        # 0 = move
-                        warp.set_property("strength",    amount)
-                        warp.set_property("size",        radius)
-                        warp.set_property("hardness",    0.5)
-                        # stamp one warp stroke at (x,y) → (x+dx, y+dy)
-                        # GEGL warp builds strokes via the "stroke" property
-                        stroke = [(x, y), (x + dx, y + dy)]
-                        warp.set_property("stroke", stroke)
-
-                        out = graph.create_child("gegl:write-buffer")
-                        out.set_property("buffer", shadow_buf)
-
-                        src.link(warp)
-                        warp.link(out)
-                        out.process()
-
-                        shadow_buf.flush()
-                        drawable.merge_shadow(True)
-                        drawable.update(
-                            max(0, int(x - radius - abs(dx))),
-                            max(0, int(y - radius - abs(dy))),
-                            int(radius * 2 + abs(dx) * 2 + 4),
-                            int(radius * 2 + abs(dy) * 2 + 4),
-                        )
-                    except Exception:
-                        # Fallback: plug-in-iwarp if GEGL warp fails
-                        proc = pdb.lookup_procedure("plug-in-iwarp")
-                        if proc:
-                            cfg = proc.create_config()
-                            try:
-                                cfg.set_property("run-mode",      Gimp.RunMode.NONINTERACTIVE)
-                                cfg.set_property("image",         image)
-                                cfg.set_property("drawable",      drawable)
-                                cfg.set_property("cursor-x",      int(x))
-                                cfg.set_property("cursor-y",      int(y))
-                                cfg.set_property("pressure",      amount)
-                                cfg.set_property("move-max-dist", int(radius))
-                                cfg.set_property("deform-type",   0)  # 0 = MOVE
-                                cfg.set_property("x",             int(x + dx))
-                                cfg.set_property("y",             int(y + dy))
-                                self._run_proc(proc, cfg)
-                            except Exception:
-                                pass
+                        image.select_ellipse(
+                            Gimp.ChannelOps.REPLACE,
+                            x_sel, y_sel, w_sel, h_sel)
+                        Gimp.Selection.feather(image, max(1.0, radius * 0.35))
+                        if not Gimp.Selection.is_empty(image):
+                            Gimp.edit_copy([drawable])
+                            pasted_raw = Gimp.edit_paste(drawable, False)
+                            # GIMP 3.x edit_paste returns a list
+                            pasted = (pasted_raw[0]
+                                      if isinstance(pasted_raw, (list, tuple))
+                                      else pasted_raw)
+                            if pasted:
+                                pasted.transform_translate(
+                                    dx * amount,
+                                    dy * amount)
+                                Gimp.floating_sel_anchor(pasted)
+                    finally:
+                        Gimp.Selection.none(image)
+                        Gimp.context_pop()
             finally:
                 image.undo_group_end()
 
