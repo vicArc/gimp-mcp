@@ -288,3 +288,76 @@ After calling `get_image_bitmap()`, systematically check:
 ---
 
 These patterns are based on practical experience and will help you succeed faster with GIMP MCP operations.
+
+---
+
+## GIMP 2 → GIMP 3 Script-Fu API Migration Reference
+
+Functions that exist in GIMP 2 Script-Fu but are **removed or renamed in GIMP 3**.  
+Use this table whenever a Script-Fu call raises `unbound variable` or `Procedure ... not found`.
+
+| GIMP 2 (broken in GIMP 3) | GIMP 3 replacement | Notes |
+|---|---|---|
+| `gimp-image-get-active-drawable` | `(car (gimp-image-get-active-drawables image))` or use `gimp-image-flatten` to get the merged layer | Returns a list in GIMP 3 |
+| `gimp-image-get-active-layer` | `(car (gimp-image-get-active-drawables image))` | Same change |
+| `DESATURATE-LUMINOSITY` constant | Integer `0` | Enum was renamed; use numeric value |
+| `plug-in-gauss` | `gimp-drawable-filter-new` + `gegl:gaussian-blur` + `gimp-drawable-merge-filter` | All plug-in-* filters removed |
+| `plug-in-unsharp-mask` | `gegl:unsharp-mask` via filter pipeline | Same pattern |
+| `plug-in-mblur` | `gegl:motion-blur-linear` via filter pipeline | |
+| `plug-in-colortoalpha` | `gegl:color-to-alpha` via filter pipeline | |
+| `file-png-save` | MCP `export_image` tool, or `file-png-export` PDB proc | Renamed to -export |
+| `file-jpeg-save` | MCP `export_image` tool, or `file-jpeg-export` PDB proc | |
+| `gimp-levels` | `gimp-drawable-levels` — **different arg order, normalized 0.0–1.0** | See signature below |
+| `gimp-curves-spline` | `gimp-drawable-curves-spline` | Renamed |
+| `gimp-brightness-contrast` | `gimp-drawable-brightness-contrast` | Renamed |
+| `gimp-hue-saturation` | `gimp-drawable-hue-saturation` | Renamed |
+| `gimp-desaturate-full` | `gimp-drawable-desaturate` | Renamed |
+| `gimp-drawable-filter-set-argument` | Not available in Script-Fu — use Python exec or MCP filter tools | No Script-Fu binding |
+| `gimp-drawable-filter-set-property` | Not available in Script-Fu | Same |
+| `gimp-pdb-proc-exists` | `(car (gimp-version))` as a presence test, or use MCP `get_pdb_procedure_info` | Not in GIMP 3 PDB |
+
+### `gimp-drawable-levels` argument order (GIMP 3)
+
+```scheme
+(gimp-drawable-levels drawable channel
+  low-input    ; float 0..1  (was 0..255 in GIMP 2)
+  gamma        ; float 0.1..10
+  clamp-input  ; boolean
+  high-input   ; float 0..1  (was 0..255 in GIMP 2)
+  low-output   ; float 0..1
+  high-output  ; float 0..1
+  clamp-output ; boolean
+)
+```
+
+**Common mistake:** passing values in 0–255 range → `argument N has value X out of range: 0.0 to 1.0`.  
+Always normalize: `(/ raw-value 255.0)`.
+
+### GEGL filter pipeline (replaces all `plug-in-*` calls)
+
+```scheme
+; General pattern for any GEGL operation in Script-Fu
+(let* ((filter (car (gimp-drawable-filter-new drawable "gegl:OP-NAME" "my-filter"))))
+  (gimp-drawable-merge-filter drawable filter))
+
+; Gaussian blur example
+(let* ((filter (car (gimp-drawable-filter-new drawable "gegl:gaussian-blur" "blur"))))
+  ; Note: filter property setting is not yet accessible from Script-Fu.
+  ; Use MCP apply_gaussian_blur tool or Python exec instead.
+  (gimp-drawable-merge-filter drawable filter))
+```
+
+For full property control use the MCP `apply_gaussian_blur`, `apply_unsharp_mask`, etc. tools
+or the `call_api exec` escape hatch with Python.
+
+### Reading return values from Script-Fu
+
+In GIMP 3, all PDB calls return a list — use `car` to get the first value:
+
+```scheme
+(car (gimp-version))                           ; → "3.2.2"
+(car (gimp-image-width image))                 ; → 512
+(car (gimp-drawable-get-pixel drawable x y))   ; → color array
+```
+
+Without `car`, you get the raw list object — not the value itself.

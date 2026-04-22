@@ -566,13 +566,70 @@ def save_xcf(ctx: Context, file_path: str, image_index: int = 0) -> dict:
 
 
 @mcp.tool()
+def load_image_as_layer(
+    ctx: Context,
+    file_path: str,
+    layer_name: str | None = None,
+    fit_canvas: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Import an external image as a new layer in an existing image.
+
+    Parameters:
+    - file_path: Absolute path of the image to import
+    - layer_name: Override the imported layer's name (defaults to filename)
+    - fit_canvas: Scale the imported layer to fit the target canvas
+      (preserving aspect) and center it (default True)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_id, layer_name, width, height}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("load_image_as_layer", {
+            "file_path":   file_path,
+            "layer_name":  layer_name,
+            "fit_canvas":  fit_canvas,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"load_image_as_layer failed: {e}")
+
+
+@mcp.tool()
+def duplicate_image(ctx: Context, image_index: int = 0) -> dict:
+    """Duplicate an image (layers + metadata) and open it in a new display.
+
+    Parameters:
+    - image_index: Source image index (default 0)
+
+    Returns: {new_image_id, new_image_index, source_image_id}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("duplicate_image", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"duplicate_image failed: {e}")
+
+
+@mcp.tool()
 def export_image(
     ctx: Context,
     file_path: str,
     format: str = "png",
     quality: int = 90,
     flatten: bool = True,
-    image_index: int = 0
+    png_compression: int | None = None,
+    jpeg_subsample: int | None = None,
+    image_index: int = 0,
 ) -> dict:
     """Export the current image to a raster file (PNG, JPEG, WEBP, TIFF).
 
@@ -581,19 +638,23 @@ def export_image(
     - format: Output format — "png" (default), "jpeg", "webp", "tiff"
     - quality: JPEG/WEBP quality 1-100 (default 90; ignored for PNG/TIFF)
     - flatten: Flatten all layers before export (default True)
+    - png_compression: PNG zlib level 0-9 (default builds use 9); ignored for other formats
+    - jpeg_subsample: JPEG chroma sub-sampling 0..3 (0 = 4:4:4 no subsampling,
+      1 = 4:2:2 horizontal, 2 = 4:2:0 full, 3 = 4:1:1). Ignored for other formats
     - image_index: Index of the image to export (default 0)
 
-    Returns:
-    - status, file_path, format, file_size_bytes
+    Returns: {file_path, format, file_size_bytes, extra_props}
     """
     try:
         conn = get_gimp_connection()
         result = conn.send_command("export_image", {
-            "file_path": file_path,
-            "format": format,
-            "quality": quality,
-            "flatten": flatten,
-            "image_index": image_index,
+            "file_path":       file_path,
+            "format":          format,
+            "quality":         quality,
+            "flatten":         flatten,
+            "png_compression": png_compression,
+            "jpeg_subsample":  jpeg_subsample,
+            "image_index":     image_index,
         })
         if result["status"] == "success":
             return result["results"]
@@ -668,6 +729,1935 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
     except Exception as e:
         traceback.print_exc()
         raise Exception(f"auto_levels failed: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY 16 — Extended Export / Clipboard
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def paste_from_clipboard(
+    ctx: Context,
+    as_new_layer: bool = True,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Paste the system clipboard as a new layer (or into the active drawable).
+
+    Returns: {layer_id, layer_name} when as_new_layer; otherwise {pasted}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("paste_from_clipboard", {
+            "as_new_layer": as_new_layer,
+            "layer_name":   layer_name,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"paste_from_clipboard failed: {e}")
+
+
+@mcp.tool()
+def copy_selection_to_clipboard(ctx: Context, image_index: int = 0) -> dict:
+    """Copy the current selection content to the system clipboard."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("copy_selection_to_clipboard", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"copy_selection_to_clipboard failed: {e}")
+
+
+@mcp.tool()
+def copy_layer_to_clipboard(
+    ctx: Context,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Copy an entire named layer to the clipboard."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("copy_layer_to_clipboard", {
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"copy_layer_to_clipboard failed: {e}")
+
+
+@mcp.tool()
+def export_webp(
+    ctx: Context,
+    file_path: str,
+    quality: int = 85,
+    lossless: bool = False,
+    animation: bool = False,
+    image_index: int = 0,
+) -> dict:
+    """Export as WebP with optional lossless / animation hints."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_webp", {
+            "file_path":   file_path,
+            "quality":     quality,
+            "lossless":    lossless,
+            "animation":   animation,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_webp failed: {e}")
+
+
+@mcp.tool()
+def export_psd(ctx: Context, file_path: str, compatibility: bool = True, image_index: int = 0) -> dict:
+    """Export as PSD via Gimp.file_save (.psd extension drives format)."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_psd", {
+            "file_path":     file_path,
+            "compatibility": compatibility,
+            "image_index":   image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_psd failed: {e}")
+
+
+@mcp.tool()
+def import_psd(ctx: Context, file_path: str) -> dict:
+    """Load a PSD file as a new image."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("import_psd", {"file_path": file_path})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"import_psd failed: {e}")
+
+
+@mcp.tool()
+def export_tiff(ctx: Context, file_path: str, compression: str = "lzw", image_index: int = 0) -> dict:
+    """Export as TIFF with optional compression.
+
+    compression: "none" | "lzw" | "packbits" | "adobe-deflate" | "jpeg" |
+                 "ccitt-g3" | "ccitt-g4"
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_tiff", {
+            "file_path":   file_path,
+            "compression": compression,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_tiff failed: {e}")
+
+
+@mcp.tool()
+def export_hdr(ctx: Context, file_path: str, image_index: int = 0) -> dict:
+    """Export as Radiance HDR (.hdr)."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_hdr", {
+            "file_path":   file_path,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_hdr failed: {e}")
+
+
+@mcp.tool()
+def export_exr(ctx: Context, file_path: str, half_float: bool = True, image_index: int = 0) -> dict:
+    """Export as OpenEXR (.exr)."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_exr", {
+            "file_path":   file_path,
+            "half_float":  half_float,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_exr failed: {e}")
+
+
+@mcp.tool()
+def export_gif_animation(
+    ctx: Context,
+    file_path: str,
+    delay_ms: int = 100,
+    loop_count: int = 0,
+    dither: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Export the current image as an animated GIF (frames = layers).
+
+    Parameters:
+    - delay_ms: Default inter-frame delay (default 100)
+    - loop_count: 0 = infinite loop, else explicit loop count
+    - dither: Enable palette dithering (default True)
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_gif_animation", {
+            "file_path":   file_path,
+            "delay_ms":    delay_ms,
+            "loop_count":  loop_count,
+            "dither":      dither,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_gif_animation failed: {e}")
+
+
+@mcp.tool()
+def export_animated_sprite_strip(
+    ctx: Context,
+    output_path: str,
+    orientation: str = "horizontal",
+    padding: int = 0,
+    image_index: int = 0,
+) -> dict:
+    """Export the image's layers as a single-row or single-column sprite strip.
+
+    Thin extension of the existing export_sprite_sheet with a semantic
+    orientation param.
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_animated_sprite_strip", {
+            "output_path": output_path,
+            "orientation": orientation,
+            "padding":     padding,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_animated_sprite_strip failed: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY 17 — Scripting / Macros
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def run_pdb_procedure(ctx: Context, name: str, args: dict | None = None) -> dict:
+    """Execute a PDB procedure by name with a dict of property values.
+
+    Safer than call_api for single-proc invocations — works hand-in-hand
+    with get_pdb_procedure_info for discovery.
+
+    Parameters:
+    - name: PDB procedure name
+    - args: {property_name: value} dict (values auto-coerced by GObject)
+
+    Returns: {name, applied, ran}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("run_pdb_procedure", {
+            "name": name,
+            "args": args or {},
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"run_pdb_procedure failed: {e}")
+
+
+@mcp.tool()
+def run_script_fu(ctx: Context, script: str) -> dict:
+    """Execute a Script-Fu snippet via script-fu-eval."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("run_script_fu", {"script": script})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"run_script_fu failed: {e}")
+
+
+@mcp.tool()
+def record_macro(ctx: Context, name: str) -> dict:
+    """Start capturing subsequent tool calls into a named in-memory macro."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("record_macro", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"record_macro failed: {e}")
+
+
+@mcp.tool()
+def stop_recording(ctx: Context) -> dict:
+    """Stop capturing the active macro."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("stop_recording", {})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"stop_recording failed: {e}")
+
+
+@mcp.tool()
+def replay_macro(ctx: Context, name: str) -> dict:
+    """Re-run the steps captured in a named macro."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("replay_macro", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"replay_macro failed: {e}")
+
+
+@mcp.tool()
+def list_macros(ctx: Context) -> dict:
+    """Return the names of all recorded macros in the current plugin session."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_macros", {})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_macros failed: {e}")
+
+
+@mcp.tool()
+def delete_macro(ctx: Context, name: str) -> dict:
+    """Discard a previously recorded macro by name."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("delete_macro", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"delete_macro failed: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY 18 — Sessions
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def save_workspace(ctx: Context, path: str) -> dict:
+    """Persist the current GIMP workspace as a multi-image XCF bundle.
+
+    Saves every open image as image_N.xcf under `path` and writes a
+    manifest.json capturing file paths, dimensions, and layer visibility.
+
+    Returns: {path, images, manifest}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("save_workspace", {"path": path})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"save_workspace failed: {e}")
+
+
+@mcp.tool()
+def load_workspace(ctx: Context, path: str) -> dict:
+    """Restore a workspace saved by save_workspace.
+
+    Returns: {loaded, images}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("load_workspace", {"path": path})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"load_workspace failed: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY 15 — Guides / Grid / Sample Points
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def add_guide(
+    ctx: Context,
+    orientation: str,
+    position: int,
+    image_index: int = 0,
+) -> dict:
+    """Add a horizontal or vertical guide.
+
+    Parameters:
+    - orientation: "horizontal" or "vertical"
+    - position: Y coordinate for horizontal, X for vertical (image coords)
+    - image_index: Target image index (default 0)
+
+    Returns: {guide_id, orientation, position}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("add_guide", {
+            "orientation": orientation,
+            "position":    position,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"add_guide failed: {e}")
+
+
+@mcp.tool()
+def list_guides(ctx: Context, image_index: int = 0) -> dict:
+    """List all guides on an image.
+
+    Returns: {count, guides: [{id, orientation, position}, ...]}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_guides", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_guides failed: {e}")
+
+
+@mcp.tool()
+def remove_guide(ctx: Context, guide_id: int, image_index: int = 0) -> dict:
+    """Delete a specific guide by id.
+
+    Returns: {guide_id}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("remove_guide", {
+            "guide_id":    guide_id,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"remove_guide failed: {e}")
+
+
+@mcp.tool()
+def remove_all_guides(ctx: Context, image_index: int = 0) -> dict:
+    """Delete every guide on an image.
+
+    Returns: {removed}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("remove_all_guides", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"remove_all_guides failed: {e}")
+
+
+@mcp.tool()
+def set_grid(
+    ctx: Context,
+    spacing_x: float | None = None,
+    spacing_y: float | None = None,
+    offset_x: float | None = None,
+    offset_y: float | None = None,
+    style: str | None = None,
+    foreground: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Set grid spacing / offset / style / foreground color.
+
+    Only non-None parameters are applied. Style accepts "dots",
+    "intersections", "solid", "dashed", "double-dashed".
+
+    Returns: {status}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("set_grid", {
+            "spacing_x":   spacing_x,
+            "spacing_y":   spacing_y,
+            "offset_x":    offset_x,
+            "offset_y":    offset_y,
+            "style":       style,
+            "foreground":  foreground,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"set_grid failed: {e}")
+
+
+@mcp.tool()
+def get_grid(ctx: Context, image_index: int = 0) -> dict:
+    """Read current grid spacing / offset / style / foreground.
+
+    Returns: {spacing, offset, style, foreground}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_grid", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_grid failed: {e}")
+
+
+@mcp.tool()
+def toggle_grid_visible(ctx: Context, image_index: int = 0) -> dict:
+    """Toggle grid visibility. GIMP 3.2 exposes this only through the UI;
+    returns a structured "not available" error. API shape preserved.
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("toggle_grid_visible", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"toggle_grid_visible failed: {e}")
+
+
+@mcp.tool()
+def snap_to_grid(ctx: Context, enabled: bool = True, image_index: int = 0) -> dict:
+    """Toggle grid snap. UI-only in GIMP 3.2 — returns structured "not available"."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("snap_to_grid", {"enabled": enabled, "image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"snap_to_grid failed: {e}")
+
+
+@mcp.tool()
+def snap_to_guides(ctx: Context, enabled: bool = True, image_index: int = 0) -> dict:
+    """Toggle guide snap. UI-only in GIMP 3.2 — returns structured "not available"."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("snap_to_guides", {"enabled": enabled, "image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"snap_to_guides failed: {e}")
+
+
+@mcp.tool()
+def snap_to_canvas_edges(ctx: Context, enabled: bool = True, image_index: int = 0) -> dict:
+    """Toggle canvas-edge snap. UI-only in GIMP 3.2 — returns structured "not available"."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("snap_to_canvas_edges", {"enabled": enabled, "image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"snap_to_canvas_edges failed: {e}")
+
+
+@mcp.tool()
+def add_sample_point(ctx: Context, x: int, y: int, image_index: int = 0) -> dict:
+    """Add a sample point at (x, y). Returns: {sample_point_id, x, y}."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("add_sample_point", {
+            "x":           x,
+            "y":           y,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"add_sample_point failed: {e}")
+
+
+@mcp.tool()
+def list_sample_points(ctx: Context, image_index: int = 0) -> dict:
+    """List sample points. Returns: {count, sample_points: [{id, x, y}, ...]}."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_sample_points", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_sample_points failed: {e}")
+
+
+@mcp.tool()
+def remove_sample_point(ctx: Context, sample_point_id: int, image_index: int = 0) -> dict:
+    """Delete a specific sample point by id. Returns: {sample_point_id}."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("remove_sample_point", {
+            "sample_point_id": sample_point_id,
+            "image_index":     image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"remove_sample_point failed: {e}")
+
+
+@mcp.tool()
+def list_brushes(ctx: Context, filter: str = "") -> dict:
+    """List installed brushes.
+
+    Parameters:
+    - filter: Substring filter passed to gimp-brushes-get-list
+
+    Returns: {count, filter, brushes}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_brushes", {"filter": filter})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_brushes failed: {e}")
+
+
+@mcp.tool()
+def list_dynamics(ctx: Context, filter: str = "") -> dict:
+    """List available dynamics presets.
+
+    GIMP 3.2 does not expose a full dynamics-list API via the Python
+    binding; this falls back to querying the PDB and, failing that,
+    returns the currently active dynamics name only.
+
+    Parameters:
+    - filter: Substring filter (may be ignored by the PDB implementation)
+
+    Returns: {count, dynamics, note}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_dynamics", {"filter": filter})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_dynamics failed: {e}")
+
+
+@mcp.tool()
+def list_patterns(ctx: Context, filter: str = "") -> dict:
+    """List installed patterns.
+
+    Returns: {count, filter, patterns}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_patterns", {"filter": filter})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_patterns failed: {e}")
+
+
+@mcp.tool()
+def list_gradients(ctx: Context, filter: str = "") -> dict:
+    """List installed gradients.
+
+    Returns: {count, filter, gradients}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_gradients", {"filter": filter})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_gradients failed: {e}")
+
+
+@mcp.tool()
+def list_pdb_procedures(ctx: Context, filter: str = "") -> dict:
+    """List PDB procedure names matching a substring filter.
+
+    Uses gimp-pdb-query with a permissive match across every non-name
+    field — useful for discovery when you know part of a proc name.
+
+    Parameters:
+    - filter: Regex / substring applied to proc names (default "" = all)
+
+    Returns: {filter, count, procedures}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_pdb_procedures", {"filter": filter})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_pdb_procedures failed: {e}")
+
+
+@mcp.tool()
+def create_brush_from_selection(ctx: Context, name: str, image_index: int = 0) -> dict:
+    """Create a new brush from the current selection of the active drawable.
+
+    GIMP 3.2 does not expose a direct PDB procedure for this — returns a
+    structured "not available" error pointing at the recommended workflow
+    (export selection as .gbr to the user brushes folder). API shape
+    preserved for future builds.
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("create_brush_from_selection", {
+            "name":        name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"create_brush_from_selection failed: {e}")
+
+
+@mcp.tool()
+def create_pattern_from_selection(ctx: Context, name: str, image_index: int = 0) -> dict:
+    """Create a new pattern from the current selection of the active drawable.
+
+    API shape shipped; GIMP 3.2 has no direct PDB proc so this returns a
+    structured "not available" error (see create_brush_from_selection).
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("create_pattern_from_selection", {
+            "name":        name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"create_pattern_from_selection failed: {e}")
+
+
+@mcp.tool()
+def delete_brush(ctx: Context, name: str) -> dict:
+    """Delete a named brush via gimp-brush-delete.
+
+    Parameters:
+    - name: Brush name
+
+    Returns: {name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("delete_brush", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"delete_brush failed: {e}")
+
+
+@mcp.tool()
+def delete_pattern(ctx: Context, name: str) -> dict:
+    """Delete a named pattern via gimp-pattern-delete.
+
+    Parameters:
+    - name: Pattern name
+
+    Returns: {name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("delete_pattern", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"delete_pattern failed: {e}")
+
+
+@mcp.tool()
+def apply_color_profile(
+    ctx: Context,
+    profile_path: str,
+    intent: str = "perceptual",
+    bpc: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Convert an image through a new ICC profile (alias for convert_to_profile).
+
+    Parameters:
+    - profile_path: Path to .icc / .icm file
+    - intent: "perceptual" (default), "relative", "saturation", "absolute"
+    - bpc: Black-point compensation (default True)
+    - image_index: Target image index (default 0)
+
+    Returns: {profile_path, intent}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_color_profile", {
+            "profile_path": profile_path,
+            "intent":       intent,
+            "bpc":          bpc,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_color_profile failed: {e}")
+
+
+@mcp.tool()
+def convert_to_profile(
+    ctx: Context,
+    profile_path: str,
+    intent: str = "perceptual",
+    bpc: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Convert pixels to a new ICC profile via Image.convert_color_profile.
+
+    Parameters:
+    - profile_path: Path to .icc / .icm file
+    - intent: "perceptual" (default), "relative", "saturation", "absolute"
+    - bpc: Black-point compensation (default True)
+    - image_index: Target image index (default 0)
+
+    Returns: {profile_path, intent}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("convert_to_profile", {
+            "profile_path": profile_path,
+            "intent":       intent,
+            "bpc":          bpc,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"convert_to_profile failed: {e}")
+
+
+@mcp.tool()
+def assign_profile(
+    ctx: Context,
+    profile_path: str,
+    image_index: int = 0,
+) -> dict:
+    """Tag an image with an ICC profile without converting pixels.
+
+    Parameters:
+    - profile_path: Path to .icc / .icm file
+    - image_index: Target image index (default 0)
+
+    Returns: {profile_path}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("assign_profile", {
+            "profile_path": profile_path,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"assign_profile failed: {e}")
+
+
+@mcp.tool()
+def get_current_profile(ctx: Context, image_index: int = 0) -> dict:
+    """Return the ICC profile currently tagged on the image.
+
+    Parameters:
+    - image_index: Target image index (default 0)
+
+    Returns: {has_profile, description, size_bytes} or {has_profile: False}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_current_profile", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_current_profile failed: {e}")
+
+
+@mcp.tool()
+def load_palette(
+    ctx: Context,
+    file_path: str,
+    name: str = "",
+) -> dict:
+    """Load a GIMP .gpl palette file and install it as a named palette.
+
+    Parses the GIMP Palette text format (header + `r g b name` rows),
+    creates a palette, and adds each entry.
+
+    Parameters:
+    - file_path: Absolute path to the .gpl file
+    - name: Override the palette's name (default: parsed Name: or filename)
+
+    Returns: {palette_name, entries, source}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("load_palette", {
+            "file_path": file_path,
+            "name":      name,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"load_palette failed: {e}")
+
+
+@mcp.tool()
+def save_palette(
+    ctx: Context,
+    name: str,
+    colors: list,
+) -> dict:
+    """Create a new palette from a list of colors.
+
+    Parameters:
+    - name: Palette name
+    - colors: List of entries. Each entry may be a plain color string
+      (hex / CSS) or a dict {hex|color, name}
+
+    Returns: {palette_name, entries}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("save_palette", {
+            "name":   name,
+            "colors": colors,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"save_palette failed: {e}")
+
+
+@mcp.tool()
+def list_palettes(ctx: Context, filter: str = "") -> dict:
+    """List installed palettes.
+
+    Parameters:
+    - filter: Substring filter passed to gimp-palettes-get-list
+
+    Returns: {count, filter, palettes}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_palettes", {"filter": filter})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_palettes failed: {e}")
+
+
+@mcp.tool()
+def get_palette_color(ctx: Context, name: str, index: int = 0) -> dict:
+    """Return one specific color from a named palette by index.
+
+    Parameters:
+    - name: Palette name
+    - index: Zero-based color index
+
+    Returns: {palette_name, index, hex}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_palette_color", {
+            "name":  name,
+            "index": index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_palette_color failed: {e}")
+
+
+@mcp.tool()
+def get_dominant_colors(
+    ctx: Context,
+    k: int = 5,
+    ignore_alpha: bool = True,
+    sample_size: int = 48,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Extract top-k dominant colors via downsample + bucket-count.
+
+    Downsamples a duplicate of the target to sample_size on the long
+    edge, bins each pixel into a 32-step RGB bucket, and returns the
+    top-k buckets by population. Fast approximation — cheap enough to
+    call per-layer for style-matching agent loops.
+
+    Parameters:
+    - k: Number of dominant colors to return (default 5)
+    - ignore_alpha: Skip pixels whose alpha < 10/255 (default True)
+    - sample_size: Long-edge size of the working downsample (default 48)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, k, sample_size, colors: [{hex, rgb, count}, ...]}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_dominant_colors", {
+            "k":            k,
+            "ignore_alpha": ignore_alpha,
+            "sample_size":  sample_size,
+            "layer_name":   layer_name,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_dominant_colors failed: {e}")
+
+
+@mcp.tool()
+def get_average_color(
+    ctx: Context,
+    x: int = 0,
+    y: int = 0,
+    width: int = 0,
+    height: int = 0,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Sample mean RGBA in a rectangular region of a layer.
+
+    Omit / pass 0 for width + height to sample from (x, y) to the layer's
+    bottom-right corner. Coordinates are layer-local.
+
+    Parameters:
+    - x, y, width, height: Region bounds in layer coordinates
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, region, rgba: [r,g,b,a], hex}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_average_color", {
+            "x":           x,
+            "y":           y,
+            "width":       width,
+            "height":      height,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_average_color failed: {e}")
+
+
+@mcp.tool()
+def set_background(ctx: Context, color: str) -> dict:
+    """Set the paint-context background color.
+
+    Parameters:
+    - color: CSS name, hex, or rgb() string
+
+    Returns: {color}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("set_background", {"color": color})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"set_background failed: {e}")
+
+
+@mcp.tool()
+def swap_colors(ctx: Context) -> dict:
+    """Swap the paint-context foreground and background colors.
+
+    Returns: {status}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("swap_colors", {})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"swap_colors failed: {e}")
+
+
+@mcp.tool()
+def set_foreground(ctx: Context, color: str) -> dict:
+    """Set the paint-context foreground color.
+
+    Parameters:
+    - color: CSS name, hex, or rgb() string
+
+    Returns: {color}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("set_foreground", {"color": color})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"set_foreground failed: {e}")
+
+
+@mcp.tool()
+def apply_seamless_tile(
+    ctx: Context,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Make a texture tile seamlessly via gegl:tile-seamless.
+
+    Parameters:
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_seamless_tile", {
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_seamless_tile failed: {e}")
+
+
+@mcp.tool()
+def apply_waterpixels(
+    ctx: Context,
+    size: int = 16,
+    smoothness: float = 1.0,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Superpixel flat-region segmentation via gegl:waterpixels.
+
+    Parameters:
+    - size: Target superpixel size in pixels (default 16)
+    - smoothness: Edge-smoothing factor (default 1.0)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, size, smoothness}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_waterpixels", {
+            "size":        size,
+            "smoothness":  smoothness,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_waterpixels failed: {e}")
+
+
+@mcp.tool()
+def apply_cartoon(
+    ctx: Context,
+    mask_radius: float = 7,
+    pct_black: float = 0.2,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Cartoon / ink-outline stylization via gegl:cartoon.
+
+    Parameters:
+    - mask_radius: Edge-detect neighborhood (default 7)
+    - pct_black: Fraction of image darkened toward black (default 0.2)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, mask_radius, pct_black}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_cartoon", {
+            "mask_radius": mask_radius,
+            "pct_black":   pct_black,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_cartoon failed: {e}")
+
+
+@mcp.tool()
+def apply_oilify(
+    ctx: Context,
+    mask_radius: int = 4,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Painterly oilify smoothing via gegl:oilify.
+
+    Parameters:
+    - mask_radius: Neighborhood radius (default 4); larger = more painterly
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, mask_radius}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_oilify", {
+            "mask_radius": mask_radius,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_oilify failed: {e}")
+
+
+@mcp.tool()
+def apply_displacement(
+    ctx: Context,
+    x_map_layer: str,
+    y_map_layer: str | None = None,
+    amount: float = 10.0,
+    edge_behavior: str = "wrap",
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Warp a layer via gegl:displace using named x/y displacement maps.
+
+    Parameters:
+    - x_map_layer: Layer whose luminance drives horizontal displacement
+    - y_map_layer: Layer whose luminance drives vertical displacement
+      (defaults to x_map_layer when omitted)
+    - amount: Displacement magnitude in pixels (default 10.0)
+    - edge_behavior: "wrap" (default), "smear", "none", "black", "white"
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, x_map_layer, y_map_layer, amount, edge_behavior}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_displacement", {
+            "x_map_layer":   x_map_layer,
+            "y_map_layer":   y_map_layer,
+            "amount":        amount,
+            "edge_behavior": edge_behavior,
+            "layer_name":    layer_name,
+            "image_index":   image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_displacement failed: {e}")
+
+
+@mcp.tool()
+def apply_bump_map(
+    ctx: Context,
+    bump_layer_name: str,
+    azimuth: float = 135,
+    elevation: float = 45,
+    depth: float = 3,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Bump / relief lighting via gegl:bump-map.
+
+    Uses another layer as the height source and lights it from the
+    specified azimuth / elevation.
+
+    Parameters:
+    - bump_layer_name: Layer name whose luminance drives the height map
+    - azimuth: Light direction in degrees (default 135)
+    - elevation: Light elevation in degrees (default 45)
+    - depth: Bump depth scalar (default 3)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, bump_layer_name, azimuth, elevation, depth}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_bump_map", {
+            "bump_layer_name": bump_layer_name,
+            "azimuth":         azimuth,
+            "elevation":       elevation,
+            "depth":           depth,
+            "layer_name":      layer_name,
+            "image_index":     image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_bump_map failed: {e}")
+
+
+@mcp.tool()
+def apply_color_to_alpha(
+    ctx: Context,
+    color: str = "white",
+    transparency_threshold: float = 0.0,
+    opacity_threshold: float = 1.0,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Drop a color out of a layer as transparency via gegl:color-to-alpha.
+
+    Parameters:
+    - color: Color to erase (CSS name, hex, or rgb()); default "white"
+    - transparency_threshold: Pixels matching <= this close to color go fully transparent
+    - opacity_threshold: Pixels matching >= this far from color stay fully opaque
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, color, transparency_threshold, opacity_threshold}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_color_to_alpha", {
+            "color":                  color,
+            "transparency_threshold": transparency_threshold,
+            "opacity_threshold":      opacity_threshold,
+            "layer_name":             layer_name,
+            "image_index":            image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_color_to_alpha failed: {e}")
+
+
+@mcp.tool()
+def apply_despeckle(
+    ctx: Context,
+    radius: int = 3,
+    median: float = 50,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Noise reduction / despeckle.
+
+    Wraps gegl:noise-reduction (the GIMP 3.2 replacement for the removed
+    plug-in-despeckle). Radius drives the pass count (clamped 1..8).
+
+    Parameters:
+    - radius: Number of noise-reduction iterations (1..8, default 3)
+    - median: Legacy param retained for API stability (not used by
+      gegl:noise-reduction directly; default 50)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, radius, median, iterations}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_despeckle", {
+            "radius":      radius,
+            "median":      median,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_despeckle failed: {e}")
+
+
+@mcp.tool()
+def apply_bokeh(
+    ctx: Context,
+    radius: float = 5.0,
+    shape: str = "hexagon",
+    highlights: float = 1.0,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Shaped bokeh blur.
+
+    API shape shipped. gegl:bokeh is not part of the default GEGL build
+    in GIMP 3.2 — this tool returns a structured "not available" error
+    with a pointer to apply_lens_blur as the closest alternative. Params
+    preserved so scripts can target the future implementation unchanged.
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_bokeh", {
+            "radius":      radius,
+            "shape":       shape,
+            "highlights":  highlights,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_bokeh failed: {e}")
+
+
+@mcp.tool()
+def apply_lens_blur(
+    ctx: Context,
+    radius: float = 5.0,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Photographic lens blur via gegl:lens-blur.
+
+    Parameters:
+    - radius: Blur radius in pixels (default 5.0)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, radius}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_lens_blur", {
+            "radius":      radius,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_lens_blur failed: {e}")
+
+
+@mcp.tool()
+def apply_motion_blur(
+    ctx: Context,
+    length: float = 10,
+    angle: float = 0,
+    type: str = "linear",
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Directional motion blur — linear / circular / zoom.
+
+    Parameters:
+    - length: Linear blur length (px) or zoom factor source (% scale)
+    - angle: Angle for linear / circular types (degrees)
+    - type: "linear" (default), "circular", or "zoom"
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, type, length, angle}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_motion_blur", {
+            "length":      length,
+            "angle":       angle,
+            "type":        type,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_motion_blur failed: {e}")
+
+
+@mcp.tool()
+def apply_unsharp_mask(
+    ctx: Context,
+    radius: float = 2.0,
+    amount: float = 0.5,
+    threshold: float = 0.0,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Sharpen a layer via gegl:unsharp-mask.
+
+    Parameters:
+    - radius: Gaussian standard deviation (default 2.0)
+    - amount: Contrast multiplier / 'strength' (default 0.5)
+    - threshold: Minimum contrast delta to sharpen (default 0.0)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, radius, amount, threshold}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_unsharp_mask", {
+            "radius":      radius,
+            "amount":      amount,
+            "threshold":   threshold,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_unsharp_mask failed: {e}")
+
+
+@mcp.tool()
+def photo_filter(
+    ctx: Context,
+    color: str = "#ffd699",
+    density: float = 25,
+    preserve_luminosity: bool = True,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Warming / cooling photo-filter overlay (Photoshop-style).
+
+    GIMP 3.2 lacks a dedicated gegl:photo-filter op; this tool builds an
+    equivalent by creating a transient colored overlay at the requested
+    density and merging it onto the target (HSL_COLOR when preserve
+    luminosity, otherwise NORMAL).
+
+    Parameters:
+    - color: Overlay color (CSS name, hex, rgb()); default warming amber
+    - density: Overlay opacity (0..100, default 25)
+    - preserve_luminosity: Use HSL_COLOR blend to keep luminance untouched
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, color, density, preserve_luminosity, note}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("photo_filter", {
+            "color":               color,
+            "density":             density,
+            "preserve_luminosity": preserve_luminosity,
+            "layer_name":          layer_name,
+            "image_index":         image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"photo_filter failed: {e}")
+
+
+@mcp.tool()
+def black_and_white(
+    ctx: Context,
+    red: float = 40,
+    yellow: float = 60,
+    green: float = 40,
+    cyan: float = 60,
+    blue: float = 20,
+    magenta: float = 80,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Channel-mixed black-and-white conversion.
+
+    Six-color weight model collapses to an approximate RGB channel mixer
+    followed by a luminance desaturate, covering the common Photoshop
+    'Black & White' sliders in one call.
+
+    Parameters:
+    - red, yellow, green, cyan, blue, magenta: Weights per hue (default
+      40/60/40/60/20/80 — a neutral starting point)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, red, yellow, green, cyan, blue, magenta}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("black_and_white", {
+            "red":         red,
+            "yellow":      yellow,
+            "green":       green,
+            "cyan":        cyan,
+            "blue":        blue,
+            "magenta":     magenta,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"black_and_white failed: {e}")
+
+
+@mcp.tool()
+def shadows_highlights(
+    ctx: Context,
+    shadow_amount: float = 50,
+    highlight_amount: float = -50,
+    radius: float = 30,
+    color_correction: float = 20,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Tonal rescue via gegl:shadows-highlights.
+
+    Parameters:
+    - shadow_amount: Positive values lift shadows (default 50)
+    - highlight_amount: Negative values compress highlights (default -50)
+    - radius: Local-contrast radius (default 30)
+    - color_correction: Applied to both shadow + highlight bands (default 20)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, shadow_amount, highlight_amount, radius, color_correction}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("shadows_highlights", {
+            "shadow_amount":    shadow_amount,
+            "highlight_amount": highlight_amount,
+            "radius":           radius,
+            "color_correction": color_correction,
+            "layer_name":       layer_name,
+            "image_index":      image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"shadows_highlights failed: {e}")
+
+
+@mcp.tool()
+def exposure(
+    ctx: Context,
+    ev_stops: float = 0.0,
+    black_level: float = 0.0,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Stops-based exposure adjustment via gegl:exposure.
+
+    Parameters:
+    - ev_stops: Exposure in stops (positive = brighter, negative = darker)
+    - black_level: Black-point offset (default 0)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, ev_stops, black_level}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("exposure", {
+            "ev_stops":    ev_stops,
+            "black_level": black_level,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"exposure failed: {e}")
+
+
+@mcp.tool()
+def color_temperature(
+    ctx: Context,
+    kelvin: float = 6500,
+    tint: float = 0,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Warm / cool color grading via gegl:color-temperature.
+
+    Parameters:
+    - kelvin: Intended temperature (default 6500 = neutral)
+    - tint: Green/magenta tint offset (default 0)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, kelvin, tint}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("color_temperature", {
+            "kelvin":      kelvin,
+            "tint":        tint,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"color_temperature failed: {e}")
+
+
+@mcp.tool()
+def posterize(
+    ctx: Context,
+    levels: int = 4,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Posterize a layer to a given number of tonal levels.
+
+    Parameters:
+    - levels: Tonal levels per channel (2..256, default 4)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, levels}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("posterize", {
+            "levels":      levels,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"posterize failed: {e}")
+
+
+@mcp.tool()
+def adjust_threshold(
+    ctx: Context,
+    low: float = 0.5,
+    high: float = 1.0,
+    channel: str = "value",
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Threshold a layer channel via gimp-drawable-threshold.
+
+    Parameters:
+    - low: Lower threshold (0..1, default 0.5)
+    - high: Upper threshold (0..1, default 1.0)
+    - channel: "value" (default), "red", "green", "blue", "alpha"
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, low, high, channel}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("adjust_threshold", {
+            "low":         low,
+            "high":        high,
+            "channel":     channel,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"adjust_threshold failed: {e}")
+
+
+@mcp.tool()
+def adjust_levels(
+    ctx: Context,
+    low_input: float = 0,
+    high_input: float = 255,
+    gamma: float = 1.0,
+    low_output: float = 0,
+    high_output: float = 255,
+    channel: str = "value",
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Precise manual levels — set black/white points + gamma.
+
+    Complements auto_levels for the common case; this call exposes explicit
+    input/output ranges per channel.
+
+    Parameters:
+    - low_input / high_input: Input black/white points (0..255 or 0..1)
+    - gamma: Input gamma (default 1.0)
+    - low_output / high_output: Output black/white points (0..255 or 0..1)
+    - channel: "value" (default), "red", "green", "blue", "alpha"
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, channel, low_input, high_input, low_output,
+              high_output, gamma}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("adjust_levels", {
+            "low_input":   low_input,
+            "high_input":  high_input,
+            "gamma":       gamma,
+            "low_output":  low_output,
+            "high_output": high_output,
+            "channel":     channel,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"adjust_levels failed: {e}")
 
 
 @mcp.tool()
@@ -1415,6 +3405,86 @@ def modify_selection(
         raise Exception(f"modify_selection failed: {e}")
 
 
+@mcp.tool()
+def fuzzy_select(
+    ctx: Context,
+    x: float,
+    y: float,
+    threshold: float = 15.0,
+    sample_merged: bool = False,
+    operation: str = "replace",
+    antialias: bool = True,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Fuzzy-select the contiguous-color region at (x, y).
+
+    Complements select_by_color (which grabs every matching region):
+    fuzzy_select grabs only the region enclosing the picked pixel — the
+    bucket-fill / magic-wand primitive.
+
+    Parameters:
+    - x, y: Pixel to sample from (image coordinates)
+    - threshold: Match tolerance (0..255; also accepts 0..1 floats)
+    - sample_merged: Sample from composite instead of the given drawable
+    - operation: "replace" (default), "add", "subtract", "intersect"
+    - antialias: Smooth the selection boundary (default True)
+    - layer_name: Drawable to sample (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, x, y, threshold, sample_merged, antialias, operation}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("fuzzy_select", {
+            "x":             x,
+            "y":             y,
+            "threshold":     threshold,
+            "sample_merged": sample_merged,
+            "operation":     operation,
+            "antialias":     antialias,
+            "layer_name":    layer_name,
+            "image_index":   image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"fuzzy_select failed: {e}")
+
+
+@mcp.tool()
+def alpha_to_selection(
+    ctx: Context,
+    layer_name: str | None = None,
+    operation: str = "replace",
+    image_index: int = 0,
+) -> dict:
+    """Load a layer's alpha channel into the selection.
+
+    Parameters:
+    - layer_name: Layer whose alpha drives the selection; defaults to active layer
+    - operation: "replace" (default), "add", "subtract", or "intersect"
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, operation}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("alpha_to_selection", {
+            "layer_name":  layer_name,
+            "operation":   operation,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"alpha_to_selection failed: {e}")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CATEGORY 5 — Layer Operations
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1619,6 +3689,156 @@ def reorder_layer(
     except Exception as e:
         traceback.print_exc()
         raise Exception(f"reorder_layer failed: {e}")
+
+
+@mcp.tool()
+def threshold_layer_mask(
+    ctx: Context,
+    layer_name: str | None = None,
+    low: float = 0.5,
+    high: float = 1.0,
+    channel: str = "value",
+    image_index: int = 0,
+) -> dict:
+    """Threshold a layer's mask in place via gimp-drawable-threshold.
+
+    Useful after painting a soft selection into a mask when you want a
+    crisp binary cutout.
+
+    Parameters:
+    - layer_name: Target layer (defaults to active); must already have a mask
+    - low: Lower threshold (0..1, default 0.5)
+    - high: Upper threshold (0..1, default 1.0)
+    - channel: "value" (default), "red", "green", "blue", "alpha"
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, low, high, channel}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("threshold_layer_mask", {
+            "layer_name":  layer_name,
+            "low":         low,
+            "high":        high,
+            "channel":     channel,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"threshold_layer_mask failed: {e}")
+
+
+@mcp.tool()
+def remove_layer_mask(
+    ctx: Context,
+    layer_name: str | None = None,
+    action: str = "apply",
+    image_index: int = 0,
+) -> dict:
+    """Apply or discard a layer's mask.
+
+    Parameters:
+    - layer_name: Target layer (defaults to active)
+    - action: "apply" (bake the mask into the layer) or "discard" (drop it)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, action}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("remove_layer_mask", {
+            "layer_name":  layer_name,
+            "action":      action,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"remove_layer_mask failed: {e}")
+
+
+@mcp.tool()
+def add_layer_mask(
+    ctx: Context,
+    layer_name: str | None = None,
+    mask_type: str = "white",
+    image_index: int = 0,
+) -> dict:
+    """Create and attach a layer mask of the requested type.
+
+    Parameters:
+    - layer_name: Target layer (defaults to active)
+    - mask_type: "white" (default, fully opaque), "black" (fully transparent),
+      "alpha" (from layer alpha), "alpha-transfer" (from layer alpha, then
+      clear the layer), "selection" (current selection), "copy" (layer content
+      as grayscale), "channel"
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, mask_id, mask_type}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("add_layer_mask", {
+            "layer_name":  layer_name,
+            "mask_type":   mask_type,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"add_layer_mask failed: {e}")
+
+
+@mcp.tool()
+def transform_layer(
+    ctx: Context,
+    layer_name: str | None = None,
+    scale_width: int | None = None,
+    scale_height: int | None = None,
+    offset_x: int | None = None,
+    offset_y: int | None = None,
+    local_origin: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Scale and/or translate a single layer (layer-local — does not touch canvas).
+
+    Pass (scale_width + scale_height) together to scale; pass offset_x /
+    offset_y to translate. Either pair can be omitted to skip that step.
+
+    Parameters:
+    - layer_name: Target layer (defaults to active)
+    - scale_width / scale_height: New layer dimensions (both required to scale)
+    - offset_x / offset_y: Translation delta (both optional)
+    - local_origin: True keeps the layer centered on its current center,
+      False keeps the top-left anchor fixed
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, width, height, offset_x, offset_y}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("transform_layer", {
+            "layer_name":   layer_name,
+            "scale_width":  scale_width,
+            "scale_height": scale_height,
+            "offset_x":     offset_x,
+            "offset_y":     offset_y,
+            "local_origin": local_origin,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"transform_layer failed: {e}")
 
 
 @mcp.tool()
@@ -2004,6 +4224,61 @@ def gradient_fill(
     except Exception as e:
         traceback.print_exc()
         raise Exception(f"gradient_fill failed: {e}")
+
+
+@mcp.tool()
+def paint_stroke(
+    ctx: Context,
+    tool: str,
+    strokes: list,
+    layer_name: str | None = None,
+    brush: str | None = None,
+    size: float | None = None,
+    hardness: float | None = None,
+    opacity: float | None = None,
+    dynamics: str | None = None,
+    color: str | None = None,
+    mode: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Unified paint-tool stroke dispatcher.
+
+    One entry point for paintbrush/pencil/airbrush/smudge/eraser/dodge/burn/
+    convolve (always available) plus ink/mypaint (depending on GIMP build).
+    Context (brush, size, hardness, opacity, dynamics, color, mode) is pushed
+    before the stroke and popped afterward; omit to inherit current context.
+
+    Parameters:
+    - tool: One of "paintbrush", "pencil", "airbrush", "smudge", "eraser",
+      "ink", "dodge", "burn", "mypaint", "convolve"
+    - strokes: Flat list of floats [x1, y1, x2, y2, ...] (even length required)
+    - layer_name: Target layer (defaults to active)
+    - brush, size, hardness, opacity, dynamics, color, mode: optional context
+    - image_index: Target image index (default 0)
+
+    Returns: {tool, pdb, stroke_count, layer_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("paint_stroke", {
+            "tool":        tool,
+            "strokes":     strokes,
+            "layer_name":  layer_name,
+            "brush":       brush,
+            "size":        size,
+            "hardness":    hardness,
+            "opacity":     opacity,
+            "dynamics":    dynamics,
+            "color":       color,
+            "mode":        mode,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"paint_stroke failed: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2719,6 +4994,215 @@ def get_pixel_color(
 
 
 @mcp.tool()
+async def batch(
+    ctx: Context,
+    operations: list,
+    stop_on_error: bool = True,
+) -> dict:
+    """Execute a pipeline of tool calls with per-op progress events.
+
+    Each entry in `operations` is {"type": "<tool-name>", "params": {...}}.
+    Sub-calls are dispatched through the same plugin dispatcher as direct
+    requests, one socket round-trip per op. After each sub-op the tool
+    emits a progress event via ctx.report_progress (if the MCP transport
+    carries a progress token) plus an informational log line via ctx.info,
+    so MCP clients can surface live progress for long pipelines.
+
+    Parameters:
+    - operations: List of {type, params} dicts
+    - stop_on_error: If True (default), halt at the first sub-failure;
+      if False, run every op and report per-op status
+
+    Returns: {total, executed, successes, failures,
+              results: [{op_index, op_type, status, ...}, ...]}
+    """
+    if not isinstance(operations, list):
+        raise Exception("batch: 'operations' must be a list")
+    if any(isinstance(op, dict) and op.get("type") == "batch" for op in operations):
+        raise Exception("batch: nested batch operations are not supported")
+
+    total = len(operations)
+    conn = get_gimp_connection()
+    results = []
+
+    async def _report(progress, message):
+        try:
+            await ctx.info(f"batch {progress}/{total}: {message}")
+        except Exception:
+            pass
+        try:
+            await ctx.report_progress(progress, total)
+        except Exception:
+            pass
+
+    for i, op in enumerate(operations):
+        if not isinstance(op, dict) or "type" not in op:
+            entry = {"status": "error",
+                     "error":  f"operation #{i} is missing 'type'",
+                     "op_index": i}
+            results.append(entry)
+            await _report(i + 1, "skipped (missing type)")
+            if stop_on_error:
+                break
+            continue
+
+        op_type = op["type"]
+        try:
+            r = conn.send_command(op_type, op.get("params") or {})
+        except Exception as e:
+            traceback.print_exc()
+            r = {"status": "error", "error": str(e),
+                 "error_type": type(e).__name__,
+                 "error_message": str(e)}
+
+        entry = dict(r) if isinstance(r, dict) else {"status": "success", "result": r}
+        entry["op_index"] = i
+        entry["op_type"]  = op_type
+        results.append(entry)
+
+        await _report(i + 1, f"{op_type} {entry.get('status')}")
+        if stop_on_error and entry.get("status") != "success":
+            break
+
+    successes = sum(1 for r in results if r.get("status") == "success")
+    return {
+        "total":     total,
+        "executed":  len(results),
+        "successes": successes,
+        "failures":  len(results) - successes,
+        "results":   results,
+    }
+
+
+@mcp.tool()
+def get_layer_thumbnail(
+    ctx: Context,
+    layer_name: str | None = None,
+    max_size: int = 128,
+    image_index: int = 0,
+) -> dict:
+    """Return a small base64-encoded PNG thumbnail of a layer.
+
+    Uses Gimp.Drawable.get_thumbnail for a fast pre-scaled preview —
+    much lighter than get_image_bitmap for decision-making without a
+    full bitmap transfer.
+
+    Parameters:
+    - layer_name: Target layer (defaults to active)
+    - max_size: Maximum thumbnail edge in pixels (default 128); aspect
+      ratio is preserved and no upscale is applied
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, width, height, mime_type, size_bytes, data_base64}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_layer_thumbnail", {
+            "layer_name":  layer_name,
+            "max_size":    max_size,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_layer_thumbnail failed: {e}")
+
+
+@mcp.tool()
+def begin_transaction(ctx: Context, name: str, image_index: int = 0) -> dict:
+    """Open a named undo group. Pair with commit_transaction or rollback_transaction.
+
+    Enables "try a multi-step op, rollback on failure" agent loops:
+    begin → run several ops → commit on success or rollback on error.
+
+    Parameters:
+    - name: Unique identifier (must not collide with an already-active transaction)
+    - image_index: Target image index (default 0)
+
+    Returns: {name, image_index, active}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("begin_transaction", {
+            "name":        name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"begin_transaction failed: {e}")
+
+
+@mcp.tool()
+def commit_transaction(ctx: Context, name: str) -> dict:
+    """Close a named undo group and keep its changes.
+
+    Parameters:
+    - name: Transaction identifier passed to begin_transaction
+
+    Returns: {name, image_index, active}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("commit_transaction", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"commit_transaction failed: {e}")
+
+
+@mcp.tool()
+def rollback_transaction(ctx: Context, name: str) -> dict:
+    """Close a named undo group and undo every operation inside it.
+
+    Parameters:
+    - name: Transaction identifier passed to begin_transaction
+
+    Returns: {name, image_index, rolled_back, active}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("rollback_transaction", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"rollback_transaction failed: {e}")
+
+
+@mcp.tool()
+def get_canvas_info(ctx: Context, image_index: int = 0) -> dict:
+    """Consolidated snapshot of an image's state in one round-trip.
+
+    Replaces the get_image_metadata + list_layers + selection-bounds chain
+    most agents run at the start of every task.
+
+    Parameters:
+    - image_index: Target image index (default 0)
+
+    Returns: {image_id, width, height, resolution, color_mode, num_layers,
+              active_layer, active_layer_id, active_layer_visible,
+              selection_bounds, has_alpha, is_dirty}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_canvas_info", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_canvas_info failed: {e}")
+
+
+@mcp.tool()
 def get_histogram(
     ctx: Context,
     channel: str = "value",
@@ -2743,6 +5227,1054 @@ def get_histogram(
     except Exception as e:
         traceback.print_exc()
         raise Exception(f"get_histogram failed: {e}")
+
+
+@mcp.tool()
+def apply_filter(
+    ctx: Context,
+    operation: str,
+    properties: dict | None = None,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Apply an arbitrary GEGL operation to a drawable and merge it.
+
+    Replaces removed `plug-in-*` PDB procedures (plug-in-gauss, plug-in-unsharp-mask,
+    plug-in-colortoalpha, plug-in-edge, plug-in-mblur, etc.) in GIMP 3.2.
+
+    Parameters:
+    - operation: GEGL op name, e.g. "gegl:gaussian-blur", "gegl:unsharp-mask"
+    - properties: Dict of op properties (key → value); unknown keys are ignored
+    - layer_name: Target layer; defaults to the active/top layer
+    - image_index: Target image index (default 0)
+
+    Returns: {operation, props_applied, layer_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_filter", {
+            "operation":   operation,
+            "properties":  properties or {},
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_filter failed: {e}")
+
+
+@mcp.tool()
+def get_pdb_procedure_info(ctx: Context, name: str) -> dict:
+    """Return metadata for a PDB procedure: blurb, help, authors, args, return values.
+
+    Discovery helper for GIMP 3.2 — lets you inspect a procedure's real argument
+    signature before calling it via `pdb.lookup_procedure(name).run(cfg)`
+    (the replacement for the removed `Gimp.get_pdb().run_procedure`).
+
+    Parameters:
+    - name: PDB procedure name, e.g. "gimp-drawable-hue-saturation"
+
+    Returns: {name, blurb, help, authors, copyright, date, arguments, return_values}
+      where arguments/return_values are lists of {name, type, blurb}.
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_pdb_procedure_info", {"name": name})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_pdb_procedure_info failed: {e}")
+
+
+@mcp.tool()
+def list_blend_modes(ctx: Context) -> dict:
+    """List every blend-mode string accepted by set_layer_properties / paint_stroke.
+
+    Each entry has {key, enum_name, available}. available=False means the
+    underlying Gimp.LayerMode enum is not exposed in this GIMP build — using
+    that key falls back to NORMAL.
+
+    Returns: {count, available_count, modes: [{key, enum_name, available}, ...]}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_blend_modes", {})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_blend_modes failed: {e}")
+
+
+@mcp.tool()
+def list_gegl_operations(
+    ctx: Context,
+    prefix: str = "",
+    contains: str = "",
+) -> dict:
+    """List available GEGL operations for use with apply_filter.
+
+    Parameters:
+    - prefix: Only include ops whose name starts with this (e.g. "gegl:")
+    - contains: Only include ops whose name contains this substring (case-insensitive)
+
+    Returns: {count, operations, prefix, contains}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_gegl_operations", {
+            "prefix":   prefix,
+            "contains": contains,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_gegl_operations failed: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY 12 — Paths
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def import_svg_as_path(
+    ctx: Context,
+    file_path: str,
+    merge: bool = True,
+    scale: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Import an SVG file as one or more paths.
+
+    Uses the GIMP 3.2 gimp-image-import-paths-from-file PDB procedure
+    (replaces gimp-vectors-import-from-file from 3.0).
+
+    Parameters:
+    - file_path: Absolute path of the SVG file
+    - merge: Merge all SVG paths into one GIMP path (default True)
+    - scale: Scale paths to the image's coordinate system (default True)
+    - image_index: Target image index (default 0)
+
+    Returns: {file_path, merge, scale, imported: [{id, name}, ...], count}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("import_svg_as_path", {
+            "file_path":   file_path,
+            "merge":       merge,
+            "scale":       scale,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"import_svg_as_path failed: {e}")
+
+
+@mcp.tool()
+def path_stroke(
+    ctx: Context,
+    path_name: str,
+    layer_name: str | None = None,
+    brush: str | None = None,
+    size: float | None = None,
+    opacity: float | None = None,
+    color: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Stroke a named path on a drawable via edit_stroke_item.
+
+    Parameters:
+    - path_name: Name of the path to stroke
+    - layer_name: Target layer (defaults to active)
+    - brush, size, opacity, color: optional context overrides
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, path_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("path_stroke", {
+            "path_name":   path_name,
+            "layer_name":  layer_name,
+            "brush":       brush,
+            "size":        size,
+            "opacity":     opacity,
+            "color":       color,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"path_stroke failed: {e}")
+
+
+@mcp.tool()
+def path_to_selection(
+    ctx: Context,
+    path_name: str,
+    operation: str = "replace",
+    image_index: int = 0,
+) -> dict:
+    """Convert a named path to a selection via image.select_item.
+
+    Parameters:
+    - path_name: Name of the path to convert
+    - operation: "replace" (default), "add", "subtract", "intersect"
+    - image_index: Target image index (default 0)
+
+    Returns: {path_name, operation}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("path_to_selection", {
+            "path_name":   path_name,
+            "operation":   operation,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"path_to_selection failed: {e}")
+
+
+@mcp.tool()
+def path_create(
+    ctx: Context,
+    name: str,
+    points: list,
+    close: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Create a bezier path and insert it into an image.
+
+    Each entry in `points` is {"anchor": [x, y], "h1": [cx, cy], "h2": [cx, cy]}.
+    The first point's anchor opens the stroke; each subsequent point is
+    reached via a cubic-to using the previous point's h2 and the current
+    point's h1. Omit h1/h2 to default to the anchor (straight-line segment).
+
+    Parameters:
+    - name: Path name
+    - points: List of {anchor, h1, h2} dicts
+    - close: Close the stroke after the last point (default True)
+    - image_index: Target image index (default 0)
+
+    Returns: {path_name, path_id, num_points, closed}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("path_create", {
+            "name":        name,
+            "points":      points,
+            "close":       close,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"path_create failed: {e}")
+
+
+@mcp.tool()
+def list_paths(ctx: Context, image_index: int = 0) -> dict:
+    """Enumerate an image's paths.
+
+    Parameters:
+    - image_index: Target image index (default 0)
+
+    Returns: {count, paths: [{id, name, visible}, ...]}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_paths", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_paths failed: {e}")
+
+
+@mcp.tool()
+def rename_path(
+    ctx: Context,
+    path_name: str,
+    new_name: str,
+    image_index: int = 0,
+) -> dict:
+    """Rename a path.
+
+    Parameters:
+    - path_name: Current path name
+    - new_name: Replacement name
+    - image_index: Target image index (default 0)
+
+    Returns: {old_name, new_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("rename_path", {
+            "path_name":   path_name,
+            "new_name":    new_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"rename_path failed: {e}")
+
+
+@mcp.tool()
+def delete_path(
+    ctx: Context,
+    path_name: str,
+    image_index: int = 0,
+) -> dict:
+    """Remove a path from an image.
+
+    Parameters:
+    - path_name: Path to remove
+    - image_index: Target image index (default 0)
+
+    Returns: {path_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("delete_path", {
+            "path_name":   path_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"delete_path failed: {e}")
+
+
+@mcp.tool()
+def set_path_visible(
+    ctx: Context,
+    path_name: str,
+    visible: bool = True,
+    image_index: int = 0,
+) -> dict:
+    """Toggle a path's visibility.
+
+    Parameters:
+    - path_name: Target path name
+    - visible: Visibility flag (default True)
+    - image_index: Target image index (default 0)
+
+    Returns: {path_name, visible}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("set_path_visible", {
+            "path_name":   path_name,
+            "visible":     visible,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"set_path_visible failed: {e}")
+
+
+@mcp.tool()
+def selection_to_path(ctx: Context, image_index: int = 0) -> dict:
+    """Convert the current selection to a path via plug-in-sel2path.
+
+    Uses GIMP's built-in selection-to-path plug-in with its default tuning.
+
+    Parameters:
+    - image_index: Target image index (default 0)
+
+    Returns: {new_paths: [{id, name}, ...], count}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("selection_to_path", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"selection_to_path failed: {e}")
+
+
+@mcp.tool()
+def export_path_as_svg(
+    ctx: Context,
+    path_name: str,
+    file_path: str,
+    image_index: int = 0,
+) -> dict:
+    """Export a named path to an SVG file.
+
+    Parameters:
+    - path_name: Path to export
+    - file_path: Absolute path for the output .svg file
+    - image_index: Target image index (default 0)
+
+    Returns: {path_name, file_path, size_bytes}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("export_path_as_svg", {
+            "path_name":   path_name,
+            "file_path":   file_path,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"export_path_as_svg failed: {e}")
+
+
+@mcp.tool()
+def add_text_on_path(
+    ctx: Context,
+    path_name: str,
+    text: str,
+    font: str = "Sans",
+    size: int = 24,
+    color: str = "black",
+    image_index: int = 0,
+) -> dict:
+    """Render text along a path.
+
+    Text-on-path is a UI-only feature in GIMP 3.2's PDB — there is no
+    single procedure that renders text warped to a curve. This tool
+    returns a clear "not available" error with a pointer to the two-step
+    workaround (add_text + text_layer_to_path + path_stroke) so callers
+    get structured feedback instead of a silent fallback.
+
+    Parameters kept for API stability across builds that may ship the
+    feature later.
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("add_text_on_path", {
+            "path_name":   path_name,
+            "text":        text,
+            "font":        font,
+            "size":        size,
+            "color":       color,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"add_text_on_path failed: {e}")
+
+
+@mcp.tool()
+def text_layer_to_path(
+    ctx: Context,
+    text_layer_name: str,
+    new_path_name: str = "",
+    image_index: int = 0,
+) -> dict:
+    """Convert a text layer's rendered glyphs to an editable path.
+
+    Wraps Gimp.Path.new_from_text_layer + image.insert_path.
+
+    Parameters:
+    - text_layer_name: Source text layer name
+    - new_path_name: Override the new path's name (default auto-generated)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, path_id, path_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("text_layer_to_path", {
+            "text_layer_name": text_layer_name,
+            "new_path_name":   new_path_name,
+            "image_index":     image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"text_layer_to_path failed: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY 14 — Non-Destructive Filters
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def merge_layer_filter(
+    ctx: Context,
+    filter_id: int,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Promote one live filter to destructive (bake it into the layer).
+
+    Parameters:
+    - filter_id: Filter id from list_layer_filters
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {filter_id, layer_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("merge_layer_filter", {
+            "filter_id":   filter_id,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"merge_layer_filter failed: {e}")
+
+
+@mcp.tool()
+def reorder_layer_filter(
+    ctx: Context,
+    filter_id: int,
+    new_position: int,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Change a filter's position in the NDE stack.
+
+    GIMP 3.2 does not expose a reorder API — returns a structured
+    "not available" error with a remove + reapply workaround suggestion.
+    API shape kept stable for future builds that ship the feature.
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("reorder_layer_filter", {
+            "filter_id":    filter_id,
+            "new_position": new_position,
+            "layer_name":   layer_name,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"reorder_layer_filter failed: {e}")
+
+
+@mcp.tool()
+def toggle_layer_filter(
+    ctx: Context,
+    filter_id: int,
+    visible: bool | None = None,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Show or hide a non-destructive filter.
+
+    Parameters:
+    - filter_id: Filter id from list_layer_filters
+    - visible: Explicit visibility (True/False); omit to toggle
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {filter_id, previous, visible}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("toggle_layer_filter", {
+            "filter_id":   filter_id,
+            "visible":     visible,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"toggle_layer_filter failed: {e}")
+
+
+@mcp.tool()
+def remove_layer_filter(
+    ctx: Context,
+    filter_id: int,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Remove a non-destructive filter from a layer without applying it.
+
+    Parameters:
+    - filter_id: Filter id from list_layer_filters / apply_filter_nondestructive
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {filter_id}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("remove_layer_filter", {
+            "filter_id":   filter_id,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"remove_layer_filter failed: {e}")
+
+
+@mcp.tool()
+def update_layer_filter(
+    ctx: Context,
+    filter_id: int,
+    properties: dict,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Re-tune a live filter by setting one or more GEGL properties.
+
+    Parameters:
+    - filter_id: Filter id (from apply_filter_nondestructive or list_layer_filters)
+    - properties: Dict of {property_name: new_value}
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {filter_id, applied}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("update_layer_filter", {
+            "filter_id":   filter_id,
+            "properties":  properties or {},
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"update_layer_filter failed: {e}")
+
+
+@mcp.tool()
+def list_layer_filters(
+    ctx: Context,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Enumerate non-destructive filters attached to a layer.
+
+    Parameters:
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, count,
+              filters: [{id, name, operation, visible, opacity}, ...]}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_layer_filters", {
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_layer_filters failed: {e}")
+
+
+@mcp.tool()
+def apply_filter_nondestructive(
+    ctx: Context,
+    operation: str,
+    properties: dict | None = None,
+    name: str | None = None,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Apply a GEGL operation as a live (non-destructive) filter on a layer.
+
+    Unlike apply_filter which merges the result immediately, this stacks
+    the filter onto the layer where it stays editable via update_layer_filter,
+    toggle_layer_filter, or merge_layer_filter.
+
+    Parameters:
+    - operation: GEGL op name, e.g. "gegl:gaussian-blur"
+    - properties: Dict of op properties
+    - name: Friendly filter name (defaults to the operation name)
+    - layer_name: Target layer (defaults to active)
+    - image_index: Target image index (default 0)
+
+    Returns: {filter_id, filter_name, operation, layer_name, props_applied}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("apply_filter_nondestructive", {
+            "operation":   operation,
+            "properties":  properties or {},
+            "name":        name,
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"apply_filter_nondestructive failed: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY 13 — Channels & Masks
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def invert_layer_mask(
+    ctx: Context,
+    layer_name: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Invert a layer's mask in place via drawable.invert.
+
+    Parameters:
+    - layer_name: Target layer (defaults to active); must have a mask
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("invert_layer_mask", {
+            "layer_name":  layer_name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"invert_layer_mask failed: {e}")
+
+
+@mcp.tool()
+def layer_mask_to_selection(
+    ctx: Context,
+    layer_name: str | None = None,
+    operation: str = "replace",
+    image_index: int = 0,
+) -> dict:
+    """Load a layer's mask into the selection.
+
+    Wraps image.select_item on layer.get_mask. Useful for building a new
+    selection from an existing mask without discarding the mask.
+
+    Parameters:
+    - layer_name: Source layer (defaults to active); must have a mask
+    - operation: "replace" (default), "add", "subtract", "intersect"
+    - image_index: Target image index (default 0)
+
+    Returns: {layer_name, operation}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("layer_mask_to_selection", {
+            "layer_name":  layer_name,
+            "operation":   operation,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"layer_mask_to_selection failed: {e}")
+
+
+@mcp.tool()
+def quick_mask_toggle(
+    ctx: Context,
+    state: bool | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Enter / exit quick-mask paint mode.
+
+    Quick-mask state is not exposed in every GIMP 3.2 build — the tool
+    probes both the Python binding and the PDB and returns a clear
+    "not available" error when neither path is present.
+
+    Parameters:
+    - state: True to enable, False to disable, None to toggle (default)
+    - image_index: Target image index (default 0)
+
+    Returns: {previous, new_state} on success
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("quick_mask_toggle", {
+            "state":       state,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"quick_mask_toggle failed: {e}")
+
+
+@mcp.tool()
+def set_channel_properties(
+    ctx: Context,
+    channel_name: str,
+    opacity: float | None = None,
+    color: str | None = None,
+    visible: bool | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Set opacity, overlay color, and/or visibility on a named channel.
+
+    Only non-None parameters are applied — omit a property to leave it
+    unchanged.
+
+    Parameters:
+    - channel_name: Target channel's name
+    - opacity: Channel opacity (0..100)
+    - color: Overlay color as CSS name, hex, or rgb() string
+    - visible: Visibility flag
+    - image_index: Target image index (default 0)
+
+    Returns: {channel_name, applied: {<keys that were actually set>}}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("set_channel_properties", {
+            "channel_name": channel_name,
+            "opacity":      opacity,
+            "color":        color,
+            "visible":      visible,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"set_channel_properties failed: {e}")
+
+
+@mcp.tool()
+def rename_channel(
+    ctx: Context,
+    channel_name: str,
+    new_name: str,
+    image_index: int = 0,
+) -> dict:
+    """Rename a named channel.
+
+    Parameters:
+    - channel_name: Current channel name
+    - new_name: Replacement name
+    - image_index: Target image index (default 0)
+
+    Returns: {old_name, new_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("rename_channel", {
+            "channel_name": channel_name,
+            "new_name":     new_name,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"rename_channel failed: {e}")
+
+
+@mcp.tool()
+def delete_channel(
+    ctx: Context,
+    channel_name: str,
+    image_index: int = 0,
+) -> dict:
+    """Delete a named channel from an image.
+
+    Parameters:
+    - channel_name: Channel to remove
+    - image_index: Target image index (default 0)
+
+    Returns: {channel_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("delete_channel", {
+            "channel_name": channel_name,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"delete_channel failed: {e}")
+
+
+@mcp.tool()
+def duplicate_channel(
+    ctx: Context,
+    channel_name: str,
+    new_name: str = "",
+    image_index: int = 0,
+) -> dict:
+    """Duplicate a named channel and insert the copy into the image.
+
+    Parameters:
+    - channel_name: Source channel's name
+    - new_name: Override the copy's name (defaults to GIMP's auto-generated name)
+    - image_index: Target image index (default 0)
+
+    Returns: {source_name, new_id, new_name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("duplicate_channel", {
+            "channel_name": channel_name,
+            "new_name":     new_name,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"duplicate_channel failed: {e}")
+
+
+@mcp.tool()
+def channel_to_selection(
+    ctx: Context,
+    channel_name: str,
+    operation: str = "replace",
+    image_index: int = 0,
+) -> dict:
+    """Load a named channel back into the selection.
+
+    Wraps image.select_item(ChannelOps.<op>, channel). Companion to
+    save_selection_as_channel for the save-mask / reload-mask workflow.
+
+    Parameters:
+    - channel_name: Target channel's name
+    - operation: "replace" (default), "add", "subtract", "intersect"
+    - image_index: Target image index (default 0)
+
+    Returns: {channel_name, operation}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("channel_to_selection", {
+            "channel_name": channel_name,
+            "operation":    operation,
+            "image_index":  image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"channel_to_selection failed: {e}")
+
+
+@mcp.tool()
+def save_selection_as_channel(
+    ctx: Context,
+    name: str = "",
+    image_index: int = 0,
+) -> dict:
+    """Save the current selection as a named channel.
+
+    Wraps Gimp.Selection.save and optionally renames the result. Useful
+    for keeping a silhouette mask you can reload later with
+    channel_to_selection.
+
+    Parameters:
+    - name: Channel name (defaults to GIMP's auto-generated name if blank)
+    - image_index: Target image index (default 0)
+
+    Returns: {id, name}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("save_selection_as_channel", {
+            "name":        name,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"save_selection_as_channel failed: {e}")
+
+
+@mcp.tool()
+def list_channels(ctx: Context, image_index: int = 0) -> dict:
+    """Enumerate an image's saved channels (user-created channels only).
+
+    Built-in RGB / alpha channels are not included — this lists channels
+    created via save_selection_as_channel, decompose, etc.
+
+    Parameters:
+    - image_index: Target image index (default 0)
+
+    Returns: {count, channels: [{id, name, opacity, visible, color}, ...]}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_channels", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_channels failed: {e}")
 
 
 def main():
