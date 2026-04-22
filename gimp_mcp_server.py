@@ -731,6 +731,256 @@ def auto_levels(ctx: Context, image_index: int = 0, layer_name: str | None = Non
         raise Exception(f"auto_levels failed: {e}")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY 15 — Guides / Grid / Sample Points
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def add_guide(
+    ctx: Context,
+    orientation: str,
+    position: int,
+    image_index: int = 0,
+) -> dict:
+    """Add a horizontal or vertical guide.
+
+    Parameters:
+    - orientation: "horizontal" or "vertical"
+    - position: Y coordinate for horizontal, X for vertical (image coords)
+    - image_index: Target image index (default 0)
+
+    Returns: {guide_id, orientation, position}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("add_guide", {
+            "orientation": orientation,
+            "position":    position,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"add_guide failed: {e}")
+
+
+@mcp.tool()
+def list_guides(ctx: Context, image_index: int = 0) -> dict:
+    """List all guides on an image.
+
+    Returns: {count, guides: [{id, orientation, position}, ...]}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_guides", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_guides failed: {e}")
+
+
+@mcp.tool()
+def remove_guide(ctx: Context, guide_id: int, image_index: int = 0) -> dict:
+    """Delete a specific guide by id.
+
+    Returns: {guide_id}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("remove_guide", {
+            "guide_id":    guide_id,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"remove_guide failed: {e}")
+
+
+@mcp.tool()
+def remove_all_guides(ctx: Context, image_index: int = 0) -> dict:
+    """Delete every guide on an image.
+
+    Returns: {removed}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("remove_all_guides", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"remove_all_guides failed: {e}")
+
+
+@mcp.tool()
+def set_grid(
+    ctx: Context,
+    spacing_x: float | None = None,
+    spacing_y: float | None = None,
+    offset_x: float | None = None,
+    offset_y: float | None = None,
+    style: str | None = None,
+    foreground: str | None = None,
+    image_index: int = 0,
+) -> dict:
+    """Set grid spacing / offset / style / foreground color.
+
+    Only non-None parameters are applied. Style accepts "dots",
+    "intersections", "solid", "dashed", "double-dashed".
+
+    Returns: {status}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("set_grid", {
+            "spacing_x":   spacing_x,
+            "spacing_y":   spacing_y,
+            "offset_x":    offset_x,
+            "offset_y":    offset_y,
+            "style":       style,
+            "foreground":  foreground,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"set_grid failed: {e}")
+
+
+@mcp.tool()
+def get_grid(ctx: Context, image_index: int = 0) -> dict:
+    """Read current grid spacing / offset / style / foreground.
+
+    Returns: {spacing, offset, style, foreground}
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("get_grid", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"get_grid failed: {e}")
+
+
+@mcp.tool()
+def toggle_grid_visible(ctx: Context, image_index: int = 0) -> dict:
+    """Toggle grid visibility. GIMP 3.2 exposes this only through the UI;
+    returns a structured "not available" error. API shape preserved.
+    """
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("toggle_grid_visible", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"toggle_grid_visible failed: {e}")
+
+
+@mcp.tool()
+def snap_to_grid(ctx: Context, enabled: bool = True, image_index: int = 0) -> dict:
+    """Toggle grid snap. UI-only in GIMP 3.2 — returns structured "not available"."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("snap_to_grid", {"enabled": enabled, "image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"snap_to_grid failed: {e}")
+
+
+@mcp.tool()
+def snap_to_guides(ctx: Context, enabled: bool = True, image_index: int = 0) -> dict:
+    """Toggle guide snap. UI-only in GIMP 3.2 — returns structured "not available"."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("snap_to_guides", {"enabled": enabled, "image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"snap_to_guides failed: {e}")
+
+
+@mcp.tool()
+def snap_to_canvas_edges(ctx: Context, enabled: bool = True, image_index: int = 0) -> dict:
+    """Toggle canvas-edge snap. UI-only in GIMP 3.2 — returns structured "not available"."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("snap_to_canvas_edges", {"enabled": enabled, "image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"snap_to_canvas_edges failed: {e}")
+
+
+@mcp.tool()
+def add_sample_point(ctx: Context, x: int, y: int, image_index: int = 0) -> dict:
+    """Add a sample point at (x, y). Returns: {sample_point_id, x, y}."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("add_sample_point", {
+            "x":           x,
+            "y":           y,
+            "image_index": image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"add_sample_point failed: {e}")
+
+
+@mcp.tool()
+def list_sample_points(ctx: Context, image_index: int = 0) -> dict:
+    """List sample points. Returns: {count, sample_points: [{id, x, y}, ...]}."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("list_sample_points", {"image_index": image_index})
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"list_sample_points failed: {e}")
+
+
+@mcp.tool()
+def remove_sample_point(ctx: Context, sample_point_id: int, image_index: int = 0) -> dict:
+    """Delete a specific sample point by id. Returns: {sample_point_id}."""
+    try:
+        conn = get_gimp_connection()
+        result = conn.send_command("remove_sample_point", {
+            "sample_point_id": sample_point_id,
+            "image_index":     image_index,
+        })
+        if result["status"] == "success":
+            return result["results"]
+        raise Exception(result.get("error", "Unknown error"))
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"remove_sample_point failed: {e}")
+
+
 @mcp.tool()
 def list_brushes(ctx: Context, filter: str = "") -> dict:
     """List installed brushes.

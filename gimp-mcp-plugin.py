@@ -398,6 +398,32 @@ class MCPPlugin(Gimp.PlugIn):
                 return self._delete_brush(j.get("params", {}))
             elif "type" in j and j["type"] == "delete_pattern":
                 return self._delete_pattern(j.get("params", {}))
+            elif "type" in j and j["type"] == "add_guide":
+                return self._add_guide(j.get("params", {}))
+            elif "type" in j and j["type"] == "list_guides":
+                return self._list_guides(j.get("params", {}))
+            elif "type" in j and j["type"] == "remove_guide":
+                return self._remove_guide(j.get("params", {}))
+            elif "type" in j and j["type"] == "remove_all_guides":
+                return self._remove_all_guides(j.get("params", {}))
+            elif "type" in j and j["type"] == "set_grid":
+                return self._set_grid(j.get("params", {}))
+            elif "type" in j and j["type"] == "get_grid":
+                return self._get_grid(j.get("params", {}))
+            elif "type" in j and j["type"] == "toggle_grid_visible":
+                return self._toggle_grid_visible(j.get("params", {}))
+            elif "type" in j and j["type"] == "snap_to_grid":
+                return self._snap_to_grid(j.get("params", {}))
+            elif "type" in j and j["type"] == "snap_to_guides":
+                return self._snap_to_guides(j.get("params", {}))
+            elif "type" in j and j["type"] == "snap_to_canvas_edges":
+                return self._snap_to_canvas_edges(j.get("params", {}))
+            elif "type" in j and j["type"] == "add_sample_point":
+                return self._add_sample_point(j.get("params", {}))
+            elif "type" in j and j["type"] == "list_sample_points":
+                return self._list_sample_points(j.get("params", {}))
+            elif "type" in j and j["type"] == "remove_sample_point":
+                return self._remove_sample_point(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_brightness_contrast":
                 return self._adjust_brightness_contrast(j.get("params", {}))
             elif "type" in j and j["type"] == "adjust_hue_saturation":
@@ -2131,6 +2157,230 @@ class MCPPlugin(Gimp.PlugIn):
                 image.undo_group_end()
             Gimp.displays_flush()
             return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    # =========================================================================
+    # CATEGORY 15 — Guides / Grid / Sample Points
+    # =========================================================================
+
+    def _add_guide(self, params):
+        """Add a horizontal or vertical guide. Returns the new guide_id."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            orientation = (params.get("orientation") or "horizontal").lower()
+            position    = int(params.get("position", 0))
+            image = self._get_image(image_index)
+            if orientation.startswith("h"):
+                guide_id = image.add_hguide(position)
+            elif orientation.startswith("v"):
+                guide_id = image.add_vguide(position)
+            else:
+                return {"status": "error",
+                        "error": f"add_guide: orientation must be 'horizontal' or 'vertical'"}
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status":      "success",
+                "guide_id":    int(guide_id),
+                "orientation": orientation,
+                "position":    position,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _list_guides(self, params):
+        """Iterate the image's guides via find_next_guide."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            image = self._get_image(image_index)
+            guides = []
+            gid = image.find_next_guide(0)
+            while gid:
+                try:
+                    orient = image.get_guide_orientation(gid)
+                    orient_str = ("horizontal" if orient == Gimp.OrientationType.HORIZONTAL
+                                  else "vertical" if orient == Gimp.OrientationType.VERTICAL
+                                  else str(orient))
+                except Exception:
+                    orient_str = "unknown"
+                try:
+                    pos = int(image.get_guide_position(gid))
+                except Exception:
+                    pos = None
+                guides.append({"id": int(gid), "orientation": orient_str, "position": pos})
+                gid = image.find_next_guide(gid)
+            return {"status": "success", "results": {
+                "status": "success", "count": len(guides), "guides": guides,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _remove_guide(self, params):
+        """Delete a specific guide by id."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            guide_id    = int(params.get("guide_id"))
+            image = self._get_image(image_index)
+            image.delete_guide(guide_id)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {"status": "success", "guide_id": guide_id}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _remove_all_guides(self, params):
+        """Iterate the image's guides and delete each one."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            image = self._get_image(image_index)
+            removed = 0
+            gid = image.find_next_guide(0)
+            while gid:
+                next_gid = image.find_next_guide(gid)
+                image.delete_guide(gid)
+                removed += 1
+                gid = next_gid
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "removed": removed,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _set_grid(self, params):
+        """Set grid spacing / offset / style / foreground color."""
+        try:
+            from gi.repository import Gegl
+            image_index = int(params.get("image_index", 0))
+            image = self._get_image(image_index)
+            sx = params.get("spacing_x")
+            sy = params.get("spacing_y")
+            if sx is not None and sy is not None:
+                image.grid_set_spacing(float(sx), float(sy))
+            ox = params.get("offset_x")
+            oy = params.get("offset_y")
+            if ox is not None and oy is not None:
+                image.grid_set_offset(float(ox), float(oy))
+            style = params.get("style")
+            if style:
+                STYLE_MAP = {
+                    "dots":           "DOTS",
+                    "intersections":  "INTERSECTIONS",
+                    "lines":          "SOLID",
+                    "solid":          "SOLID",
+                    "dashed":         "ON_OFF_DASH",
+                    "double-dashed":  "DOUBLE_DASH",
+                }
+                enum_name = STYLE_MAP.get(style.lower(), style.upper())
+                style_enum = getattr(Gimp.GridStyle, enum_name, None)
+                if style_enum is not None:
+                    image.grid_set_style(style_enum)
+            foreground = params.get("foreground")
+            if foreground:
+                image.grid_set_foreground_color(Gegl.Color.new(foreground))
+            Gimp.displays_flush()
+            return {"status": "success", "results": {"status": "success"}}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _get_grid(self, params):
+        """Read grid spacing / offset / style / color."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            image = self._get_image(image_index)
+            spacing = image.grid_get_spacing()
+            offset  = image.grid_get_offset()
+            style_enum = image.grid_get_style()
+            fg_color   = image.grid_get_foreground_color()
+            def _pair(t):
+                if isinstance(t, tuple):
+                    if len(t) == 3:
+                        return [float(t[1]), float(t[2])]
+                    if len(t) == 2:
+                        return [float(t[0]), float(t[1])]
+                return None
+            return {"status": "success", "results": {
+                "status": "success",
+                "spacing": _pair(spacing),
+                "offset":  _pair(offset),
+                "style":   str(style_enum),
+                "foreground": self._color_to_hex(fg_color),
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _toggle_grid_visible(self, _params):
+        return {"status": "error",
+                "error": "toggle_grid_visible: grid visibility is a UI state (View → Show Grid) "
+                         "and is not exposed via Gimp.Image or the PDB in 3.2. "
+                         "Use the UI or View menu from inside GIMP."}
+
+    def _snap_to_grid(self, _params):
+        return {"status": "error",
+                "error": "snap_to_grid: snap state is UI-only in GIMP 3.2. "
+                         "Use View → Snap to Grid from inside GIMP."}
+
+    def _snap_to_guides(self, _params):
+        return {"status": "error",
+                "error": "snap_to_guides: snap state is UI-only in GIMP 3.2. "
+                         "Use View → Snap to Guides from inside GIMP."}
+
+    def _snap_to_canvas_edges(self, _params):
+        return {"status": "error",
+                "error": "snap_to_canvas_edges: snap state is UI-only in GIMP 3.2. "
+                         "Use View → Snap to Canvas Edges from inside GIMP."}
+
+    def _add_sample_point(self, params):
+        """Add a sample point at (x, y). Returns the new sample_point_id."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            x = int(params.get("x", 0))
+            y = int(params.get("y", 0))
+            image = self._get_image(image_index)
+            sp_id = image.add_sample_point(x, y)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "sample_point_id": int(sp_id), "x": x, "y": y,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _list_sample_points(self, params):
+        """Iterate sample points via find_next_sample_point."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            image = self._get_image(image_index)
+            points = []
+            spid = image.find_next_sample_point(0)
+            while spid:
+                try:
+                    pos = image.get_sample_point_position(spid)
+                except Exception:
+                    pos = None
+                if isinstance(pos, tuple) and len(pos) >= 3:
+                    px, py = int(pos[1]), int(pos[2])
+                elif isinstance(pos, tuple) and len(pos) == 2:
+                    px, py = int(pos[0]), int(pos[1])
+                else:
+                    px, py = None, None
+                points.append({"id": int(spid), "x": px, "y": py})
+                spid = image.find_next_sample_point(spid)
+            return {"status": "success", "results": {
+                "status": "success", "count": len(points), "sample_points": points,
+            }}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+    def _remove_sample_point(self, params):
+        """Delete a specific sample point by id."""
+        try:
+            image_index = int(params.get("image_index", 0))
+            sp_id = int(params.get("sample_point_id"))
+            image = self._get_image(image_index)
+            image.delete_sample_point(sp_id)
+            Gimp.displays_flush()
+            return {"status": "success", "results": {
+                "status": "success", "sample_point_id": sp_id,
+            }}
         except Exception as e:
             return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
